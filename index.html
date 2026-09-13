@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>PianoPath</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">🎹 <b>PianoPath</b></div>
+    <nav id="nav">
+      <button data-view="home" class="active">🏠 Path</button>
+      <button data-view="learn">📖 Lessons</button>
+      <button data-view="ear">👂 Ear</button>
+      <button data-view="songs">🎼 Songs</button>
+      <button data-view="free">🎹 Free play</button>
+      <button data-view="settings">⚙️ Settings</button>
+    </nav>
+    <div id="midiStatus" class="midi-status" title="MIDI keyboard status">
+      <span class="dot"></span><span class="txt">Connecting…</span>
+    </div>
+  </header>
+
+  <main id="view"></main>
+
+  <div id="kbdDock">
+    <div class="kbd-bar">
+      <span id="kbdHint" class="muted small"></span>
+      <span class="spacer"></span>
+      <span class="muted small">Computer keys: <kbd>A</kbd>…<kbd>;</kbd> play, <kbd>Z</kbd>/<kbd>X</kbd> octave</span>
+    </div>
+    <div id="keyboard" class="kb"></div>
+  </div>
+
+  <div id="startOverlay" class="overlay">
+    <div class="overlay-card">
+      <div class="big-emoji">🎹</div>
+      <h1>Welcome to PianoPath</h1>
+      <p>Plug in your MIDI keyboard, then press start.<br>No keyboard? Your computer keys work too.</p>
+      <button id="startBtn" class="btn primary big">Start playing</button>
+    </div>
+  </div>
+
+  <script>window.PL = {};</script>
+  <script src="js/audio.js"></script>
+  <script src="js/input.js"></script>
+  <script src="js/midifile.js"></script>
+  <script src="js/theory.js"></script>
+  <script src="js/keyboard.js"></script>
+  <script src="js/songs.js"></script>
+  <script src="js/lessons.js"></script>
+  <script src="js/rounds.js"></script>
+  <script src="js/theory-games.js"></script>
+  <script src="js/theory-lessons.js"></script>
+  <script src="js/ear.js"></script>
+  <script src="js/player.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
