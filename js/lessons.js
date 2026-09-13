@@ -49,7 +49,7 @@
     return { hand, notes, label };
   }
   const fingerIn = (pos, n) => { const i = pos.notes.indexOf(n); return i < 0 ? 0 : pos.hand === 'R' ? i + 1 : 5 - i; };
-  const posName = (pos) => `${pos.hand === 'R' ? '✋ <b>Right hand</b>' : '🤚 <b>Left hand</b>'} · ${pos.label}`;
+  const posName = (pos) => `${pos.hand === 'R' ? '<span class="hb r">R</span> <b>Right hand</b>' : '<span class="hb l">L</span> <b>Left hand</b>'} · ${pos.label}`;
   const posMarks = (pos) => (n) => {
     const f = fingerIn(pos, n);
     return f ? { color: pos.hand === 'R' ? '#cfdcff' : '#c9f2d9', label: nm(n), finger: f, fcolor: pos.hand === 'R' ? '#7c9cff' : '#3ecf8e' } : null;
@@ -138,7 +138,7 @@
             () => `<h2>The treble clef 𝄞 — right hand</h2><p>The curly sign at the start is the <b>treble clef</b>. It is usually for your <b>right hand</b>.
               Its curl wraps around the line of <b>${nm(67)}</b>. <b>Middle ${nm(60)}</b> sits on a small extra line below the staff.</p>
               ${staff({ clef: 'treble', stems: false, gapX: 70, notes: [{ note: 60, label: 'middle ' + nm(60), color: T.noteColor(60) }, { note: 67, label: nm(67) + ' line', color: T.noteColor(67) }] })}`,
-            () => `<h2>Finger numbers ✋</h2>
+            () => `<h2>Finger numbers</h2>
               <p>Pianists number their fingers: <b>1 = thumb</b>, 2 = pointer, 3 = middle, 4 = ring, <b>5 = pinky</b>. Both hands use the same numbers.</p>
               <p><b>C position:</b> put your <b>right thumb on middle ${nm(60)}</b>. Each finger rests on the next white key:</p>
               ${posKeys(P.rC4)}<p style="text-align:center">${fingerList(P.rC4)}</p>
@@ -218,7 +218,7 @@
             () => `<h2>The bass clef 𝄢</h2><p>The bass clef is for <b>low notes</b>, usually your <b>left hand</b>. Its two dots sit around the line of <b>${nm(53)}</b>.
               Middle ${nm(60)} is now on a small extra line <b>above</b> the staff.</p>${labeled(whites('C3', 'C4'), 'bass')}
               <div class="tip">Same idea as before: step up the staff = next white key to the right.</div>`,
-            () => `<h2>Left hand position 🤚</h2>
+            () => `<h2>Left hand position</h2>
               <p>Put your <b>left pinky (5) on bass ${nm(48)}</b> — the ${nm(48)} one octave below middle ${nm(60)}. On the bass staff it is the <b>2nd space</b>.</p>
               ${posKeys(P.lC3)}<p style="text-align:center">${fingerList(P.lC3)}</p>
               <div class="tip">On the left hand the thumb is on the <b>right</b> side, so the finger numbers count <b>down</b> as the notes go up. Green numbers on the keyboard show your left hand.</div>`,
@@ -226,7 +226,7 @@
           game: { type: 'staff', clef: 'bass', notes: whites('C3', 'G3'), count: 12, positions: [P.lC3] },
         },
         {
-          id: 's4b', emoji: '🤚', title: 'Bass: up to middle C', desc: 'Move your left hand next to middle C.', range: [36, 72],
+          id: 's4b', emoji: '📍', title: 'Bass: up to middle C', desc: 'Move your left hand next to middle C.', range: [36, 72],
           intro: [() => `<h2>Left hand near middle ${nm(60)}</h2>
             <p>To reach higher bass notes, move your left hand right: <b>thumb on middle ${nm(60)}</b>, <b>pinky on ${nm(53)}</b> — the ${nm(53)} line between the bass clef dots.</p>
             ${posKeys(P.lF3)}<p style="text-align:center">${fingerList(P.lF3)}</p>
@@ -400,7 +400,7 @@
     let bandPos = null, bandMoved = false;
     function showHand() {
       const np = choosePos(target);
-      if (!np) { pos = null; bandPos = null; kb.clearFingers(); hl.innerHTML = clefOf(target.note) === 'treble' ? '✋ <b>Right hand</b>' : '🤚 <b>Left hand</b>'; return; }
+      if (!np) { pos = null; bandPos = null; kb.clearFingers(); hl.innerHTML = clefOf(target.note) === 'treble' ? '<span class="hb r">R</span> <b>Right hand</b>' : '<span class="hb l">L</span> <b>Left hand</b>'; return; }
       const prev = pos;
       pos = np;
       bandMoved = !!prev && np !== prev;

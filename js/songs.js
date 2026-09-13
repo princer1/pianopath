@@ -57,7 +57,7 @@
         left: 'C3/4 | G2/4 | C3/4 | G2/4 | C3/4 | G2/4 | C3/4 | G2/2 C3/2',
       }),
       build({
-        id: 'minuet-g', title: 'Minuet in G', composer: 'Petzold (from Bach’s notebook) · simplified left hand', level: 3, bpm: 100, timeSig: [3, 4],
+        id: 'minuet-g', title: 'Minuet in G', composer: 'Petzold (from Bach’s notebook) · simplified left hand', level: 3, bpm: 100, timeSig: [3, 4], keySig: 1,
         right: minuetA + ' F#4/1 G4/0.5 A4/0.5 B4/0.5 G4/0.5 | A4/3 | ' + minuetA + ' A4/1 B4/0.5 A4/0.5 G4/0.5 F#4/0.5 | G4/3',
         left: minuetL + ' D3/3 | D3/3 | ' + minuetL + ' D3/3 | G2/3',
       }),
@@ -67,7 +67,7 @@
         left: 'r/1.5 | r/1.5 | A2/0.25 E3/0.25 A3/0.25 r/0.75 | E2/0.25 E3/0.25 G#3/0.25 r/0.75 | A2/0.25 E3/0.25 A3/0.25 r/0.75 | r/1.5 | A2/0.25 E3/0.25 A3/0.25 r/0.75 | E2/0.25 E3/0.25 G#3/0.25 r/0.75 | A2/0.25 E3/0.25 A3/0.5',
       }),
       build({
-        id: 'chopin-prelude-4-easy', title: 'Prelude in E minor, Op. 28 No. 4', composer: 'Chopin · easy arrangement (melody + simple chords)', level: 4, bpm: 56, timeSig: [4, 4],
+        id: 'chopin-prelude-4-easy', title: 'Prelude in E minor, Op. 28 No. 4', composer: 'Chopin · easy arrangement (melody + simple chords)', level: 4, bpm: 56, timeSig: [4, 4], keySig: 1,
         right: 'B4/4 | C5/1.5 B4/0.5 B4/2 | B4/4 | C5/1.5 B4/0.5 B4/2 | B4/2 A#4/1 B4/1 | C5/1.5 B4/0.5 A4/2 | A4/4 | B4/1.5 A4/0.5 A4/2 | B4/2 G4/1 F#4/1 | E4/4',
         left: 'E3+G3+B3/2 E3+G3+B3/2 | E3+A3+C4/2 E3+G3+B3/2 | D#3+F#3+B3/2 D#3+F#3+B3/2 | E3+A3+C4/2 E3+G3+B3/2 | E3+G3+B3/2 D#3+F#3+B3/2 | E3+A3+C4/2 D#3+F#3+A3/2 | D#3+F#3+A3/2 D#3+F#3+A3/2 | D#3+F#3+B3/2 D#3+F#3+A3/2 | E3+G3+B3/2 D#3+F#3+A3/2 | E3+G3+B3/4',
       }),

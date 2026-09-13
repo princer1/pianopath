@@ -65,6 +65,56 @@
   };
   T.noteColor = (n) => (T.settings.colors ? T.color(n) : '#7c9cff');
 
+  // ---------- keys ----------
+  const SHARP_ORDER = [3, 0, 4, 1, 5, 2, 6], FLAT_ORDER = [6, 2, 5, 1, 4, 0, 3]; // letter indexes: F C G D A E B / B E A D G C F
+  // Accidental per letter (C..B) in a key signature: sf > 0 sharps, sf < 0 flats.
+  T.keyAccidentals = function (sf) {
+    const a = [0, 0, 0, 0, 0, 0, 0];
+    for (let i = 0; i < Math.min(7, Math.abs(sf)); i++) a[(sf > 0 ? SHARP_ORDER : FLAT_ORDER)[i]] = sf > 0 ? 1 : -1;
+    return a;
+  };
+  // Spell a note the way it would be written in a key. Returns { letter, acc, octave, pos (staff position) }.
+  T.spellInKey = function (note, sf, preferFlat) {
+    const NAT = [0, 2, 4, 5, 7, 9, 11];
+    const ka = T.keyAccidentals(sf);
+    const pc = T.pc(note);
+    const options = [];
+    for (let l = 0; l < 7; l++) {
+      const acc = ((pc - NAT[l] + 18) % 12) - 6;
+      if (Math.abs(acc) <= 1) options.push({ letter: l, acc });
+    }
+    const wantFlat = sf < 0 || (sf === 0 && preferFlat);
+    const pick = options.find((o) => o.acc === ka[o.letter]) || options.find((o) => o.acc === 0) ||
+      options.find((o) => o.acc === (wantFlat ? -1 : 1)) || options[0];
+    const octave = Math.floor((note - pick.acc) / 12) - 1;
+    return { letter: pick.letter, acc: pick.acc, octave, pos: octave * 7 + pick.letter };
+  };
+  // Best-matching key signature for a set of notes (Krumhansl–Schmuckler key profiles).
+  T.detectKey = function (notes) {
+    const MAJ = [6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88];
+    const MIN = [6.33, 2.68, 3.52, 5.38, 2.6, 3.53, 2.54, 4.75, 3.98, 2.69, 3.34, 3.17];
+    const SF = [0, -5, 2, -3, 4, -1, 6, 1, -4, 3, -2, 5]; // major key signature by tonic pitch class
+    const h = new Array(12).fill(0);
+    notes.forEach((n) => (h[T.pc(n.note)] += Math.min(4, n.dur || 1)));
+    const mean = (a) => a.reduce((s, x) => s + x, 0) / 12;
+    const corr = (prof, r) => {
+      const hm = mean(h), pm = mean(prof);
+      let num = 0, dh = 0, dp = 0;
+      for (let i = 0; i < 12; i++) {
+        const x = h[i] - hm, y = prof[(i - r + 12) % 12] - pm;
+        num += x * y; dh += x * x; dp += y * y;
+      }
+      return dh && dp ? num / Math.sqrt(dh * dp) : 0;
+    };
+    let best = { score: -2, sf: 0 };
+    for (let r = 0; r < 12; r++) {
+      const ma = corr(MAJ, r), mi = corr(MIN, r);
+      if (ma > best.score) best = { score: ma, sf: SF[r] };
+      if (mi > best.score) best = { score: mi, sf: SF[(r + 3) % 12] };
+    }
+    return best.sf;
+  };
+
   // ---------- staff SVG (for lessons) ----------
   const TOP = { treble: 38, bass: 26 };   // F5 / A3 top line
   const MID = { treble: 34, bass: 22 };   // B4 / D3 middle line

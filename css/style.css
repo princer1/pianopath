@@ -137,11 +137,25 @@ label.field { display: flex; flex-direction: column; gap: 4px; font-size: 13px; 
 .seg button { background: var(--panel2); color: var(--muted); border: 0; padding: 6px 10px; cursor: pointer; font: inherit; font-size: 13px; }
 .seg button + button { border-left: 1px solid var(--line); }
 .seg button.active { background: var(--accent); color: #0b0d18; font-weight: 600; }
-.sheet-strip { background: #f7f4ea; height: 190px; position: relative; overflow: hidden; flex-shrink: 0; }
+.sheet-strip { background: #f7f4ea; height: 214px; position: relative; overflow: hidden; flex-shrink: 0; }
 .sheet-strip canvas, .fall-area canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
 .fall-area { flex: 1; position: relative; min-height: 120px; background: linear-gradient(#0e0f15, #171925); }
-.hud { position: absolute; top: 10px; right: 14px; text-align: right; font-size: 13px; color: var(--muted); pointer-events: none; }
-.hud b { color: var(--text); font-size: 20px; }
+.hud {
+  position: absolute; top: 0; left: 0; right: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 2px 18px;
+  padding: 4px 12px; font-size: 13px; color: var(--muted); pointer-events: none;
+  background: rgba(18,19,26,.85); border-bottom: 1px solid var(--line);
+}
+.hud b { color: var(--text); }
+.hud .beatnow { font-size: 15px; color: var(--text); }
+.hud .beatnow b { font-size: 18px; color: var(--accent); }
+.hud .hud-legend { margin-left: auto; }
+.hb { display: inline-block; width: 18px; height: 18px; border-radius: 50%; font: 700 11px/18px sans-serif; text-align: center; color: #0b0d18; vertical-align: 1px; }
+.hb.r { background: var(--accent); }
+.hb.l { background: var(--good); }
+.overlay-card.wide { max-width: 880px; width: 95vw; text-align: left; max-height: 90vh; overflow: auto; }
+table.tracks-t { width: 100%; border-collapse: collapse; font-size: 14px; }
+table.tracks-t th, table.tracks-t td { padding: 6px 8px; border-bottom: 1px solid var(--line); text-align: left; }
+table.tracks-t th { color: var(--muted); font-size: 12px; font-weight: 600; }
 .countin { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 120px; font-weight: 800; color: rgba(255,255,255,.85); pointer-events: none; }
 
 /* ---------- keyboard ---------- */

@@ -33,9 +33,119 @@
   App.getInstrument = () => data.settings.instrument;
   App.setInstrument = (v) => { data.settings.instrument = v; PL.Audio.useSamples = v === 'recorded'; save(); };
 
+  // Imported MIDI files are stored as the parsed file plus the chosen parts, and arranged when the app starts.
   App.imported = [];
-  try { App.imported = JSON.parse(localStorage.getItem('pl.imported') || '[]'); } catch (e) {}
-  const saveImported = () => { try { localStorage.setItem('pl.imported', JSON.stringify(App.imported)); return true; } catch (e) { return false; } };
+  try {
+    App.imported = JSON.parse(localStorage.getItem('pl.imported') || '[]').map((it) => {
+      if (!it.raw) return it; // imported before parts could be chosen
+      try {
+        const song = PL.MidiFile.arrange(it.raw, it.assign, { id: it.id, title: it.title, timeSig: it.timeSig, phase: it.phase });
+        return Object.assign(song, { raw: it.raw, assign: it.assign });
+      } catch (e) { return null; }
+    }).filter(Boolean);
+  } catch (e) {}
+  const saveImported = () => {
+    try {
+      localStorage.setItem('pl.imported', JSON.stringify(App.imported.map((s) => (s.raw ? { id: s.id, title: s.title, raw: s.raw, assign: s.assign, timeSig: s.timeSig, phase: s.phase } : s))));
+      return true;
+    } catch (e) { return false; }
+  };
+  App.replaceImported = (song) => {
+    const i = App.imported.findIndex((s) => s.id === song.id);
+    if (i >= 0) App.imported[i] = song; else App.imported.push(song);
+    saveImported();
+  };
+
+  // Dialog to choose which instrument parts of a MIDI file each hand plays.
+  // entry: { raw, assign?, id?, title }. onDone(song) receives the arranged song.
+  App.pickTracks = function (entry, onDone) {
+    const M = PL.MidiFile, raw = entry.raw;
+    const guess = M.guess(raw);
+    const assign = { ...(entry.assign || guess) };
+    const esc = (s) => String(s).replace(/[&<>"]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));
+    const noteLbl = (n) => T.name(n) + T.octave(n);
+    const OPTS = [['R', 'Right hand'], ['L', 'Left hand'], ['split', 'Both hands (split at middle C)'], ['skip', 'Leave out']];
+    let voices = [];
+    const stopPreview = () => { voices.forEach((v) => v.release(0)); voices = []; };
+    const many = raw.tracks.length > 2;
+    const meter = M.meter(raw);
+    const tsKey = (t) => t.join('/');
+    let ts = entry.timeSig || meter.timeSig;
+    let phase = entry.timeSig ? entry.phase || 0 : meter.phase;
+    const TS = [[4, 4], [3, 4], [2, 4], [6, 8]];
+    if (!TS.some((t) => tsKey(t) === tsKey(raw.timeSig))) TS.push(raw.timeSig);
+
+    const el = document.createElement('div');
+    el.className = 'overlay';
+    el.innerHTML = `<div class="overlay-card wide">
+      <h2>🎚️ Which parts do you want to play?</h2>
+      <p class="muted">This file has <b>${raw.tracks.length}</b> instrument part${raw.tracks.length === 1 ? '' : 's'}.
+        ${many ? 'That is a whole band — two hands can’t play everything. Usually the <b>melody</b> (singer or lead) goes to your <b>right hand</b> and the <b>bass</b> to your <b>left hand</b>.' : ''}
+        Press ▶ to hear a part. ★ marks the app's suggestion.</p>
+      <div class="row" style="margin:6px 0 10px">
+        <label class="row small">Time signature
+          <select data-ts>${TS.map((t) => `<option value="${tsKey(t)}" ${tsKey(t) === tsKey(ts) ? 'selected' : ''}>${tsKey(t)}${tsKey(t) === tsKey(meter.timeSig) ? ' ★' : ''}</option>`).join('')}</select></label>
+        <span class="muted small">${meter.changed ? `The file says <b>${tsKey(raw.timeSig)}</b>, but its beat sounds like <b>${tsKey(meter.timeSig)}</b>, so that is suggested. ` : ''}If the bar lines look wrong while playing, open 🎚️ Parts and change it.</span>
+      </div>
+      <div style="overflow-x:auto"><table class="tracks-t">
+        <tr><th></th><th>Part</th><th>Instrument</th><th>Notes</th><th>Range</th><th>Play with</th></tr>
+        ${raw.tracks.map((t) => `<tr>
+          <td><button class="btn small" data-prev="${t.id}" title="Hear this part">▶</button></td>
+          <td>${esc(t.name)}</td>
+          <td class="muted">${M.family(t.program)}</td>
+          <td>${t.count}</td>
+          <td class="nowrap">${noteLbl(t.low)}–${noteLbl(t.high)}</td>
+          <td><select data-tr="${t.id}">${OPTS.map(([v, l]) => `<option value="${v}" ${assign[t.id] === v ? 'selected' : ''}>${l}${guess[t.id] === v && v !== 'skip' ? ' ★' : ''}</option>`).join('')}</select></td>
+        </tr>`).join('')}
+      </table></div>
+      <div class="row" style="margin-top:14px">
+        <span class="small" data-sum></span><span class="spacer"></span>
+        <button class="btn" data-cancel>Cancel</button>
+        <button class="btn primary" data-ok>Open song →</button>
+      </div>
+    </div>`;
+    const sum = el.querySelector('[data-sum]');
+    const update = () => {
+      const count = (hand) => raw.tracks.filter((t) => assign[t.id] === hand || assign[t.id] === 'split').length;
+      sum.innerHTML = `<span class="hb r">R</span> ${count('R')} part${count('R') === 1 ? '' : 's'} &nbsp; <span class="hb l">L</span> ${count('L')} part${count('L') === 1 ? '' : 's'}`;
+    };
+    el.addEventListener('change', (e) => {
+      const sel = e.target.closest('[data-tr]');
+      if (sel) { assign[sel.dataset.tr] = sel.value; update(); }
+      const tsSel = e.target.closest('[data-ts]');
+      if (tsSel) {
+        ts = tsSel.value.split('/').map(Number);
+        phase = tsKey(ts) === tsKey(meter.timeSig) ? meter.phase : 0;
+      }
+    });
+    el.addEventListener('click', (e) => {
+      const pv = e.target.closest('[data-prev]');
+      if (pv) {
+        stopPreview();
+        PL.Audio.init();
+        const id = +pv.dataset.prev;
+        const ns = raw.notes.filter((n) => n[0] === id);
+        const t0 = ns[0][2], bpm = raw.tempos[0].bpm, at = PL.Audio.now() + 0.1;
+        ns.filter((n) => n[2] < t0 + 12).forEach(([, note, start, dur, vel]) => {
+          voices.push(PL.Audio.play(note, (dur * 60) / bpm, vel, at + ((start - t0) * 60) / bpm));
+        });
+        return;
+      }
+      if (e.target.closest('[data-cancel]')) { stopPreview(); el.remove(); return; }
+      if (e.target.closest('[data-ok]')) {
+        try {
+          const song = Object.assign(M.arrange(raw, assign, { id: entry.id, title: entry.title, timeSig: ts, phase }), { raw, assign });
+          stopPreview();
+          el.remove();
+          onDone(song);
+        } catch (err) {
+          sum.innerHTML = `<span style="color:var(--bad)">${esc(err.message)}</span>`;
+        }
+      }
+    });
+    update();
+    document.body.appendChild(el);
+  };
   App.findSong = (id) => PL.Songs.list.find((s) => s.id === id) || App.imported.find((s) => s.id === id);
 
   // ---------- practice time & streak ----------
@@ -142,11 +252,14 @@
     main.querySelector('[data-import]').addEventListener('change', async (e) => {
       const f = e.target.files[0];
       if (!f) return;
+      e.target.value = ''; // allow choosing the same file again
       try {
-        const song = PL.MidiFile.parse(await f.arrayBuffer(), f.name.replace(/\.midi?$/i, ''));
-        App.imported.push(song);
-        if (!saveImported()) alert('The song will open, but it is too large to keep for next time.');
-        App.go('songs', song.id);
+        const raw = PL.MidiFile.parse(await f.arrayBuffer(), f.name.replace(/\.midi?$/i, ''));
+        App.pickTracks({ raw, title: raw.title }, (song) => {
+          App.imported.push(song);
+          if (!saveImported()) alert('The song will open, but it is too large to keep for next time.');
+          App.go('songs', song.id);
+        });
       } catch (err) {
         alert('Could not read this MIDI file: ' + err.message);
       }

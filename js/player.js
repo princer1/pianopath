@@ -4,6 +4,11 @@
   const P = (PL.Player = {});
   const STORE = 'pl.player';
 
+  // Written note values, longest first: [beats, type, dotted, tuplet]
+  const VALUES = [[4, 'w', 0], [3, 'h', 1], [2, 'h', 0], [1.5, 'q', 1], [1, 'q', 0], [0.75, 'e', 1], [0.5, 'e', 0], [0.375, 's', 1], [1 / 3, 'e', 0, 3], [0.25, 's', 0]];
+  const VALUE_NAME = { w: 'whole note', h: 'half note', q: 'quarter note', e: 'eighth note', s: 'sixteenth note' };
+  const valueOf = (d) => VALUES.find(([v]) => d >= v - 0.02) || VALUES[VALUES.length - 1];
+
   P.mount = function (main, song) {
     main.classList.add('flush');
     const kb = PL.App.kb;
@@ -16,20 +21,61 @@
     const totalBars = Math.max(1, Math.ceil(lastBeat / barLen - 1e-6));
     const hasL = notes.some((n) => n.hand === 'L');
     const hasR = notes.some((n) => n.hand === 'R');
+    const tempos = song.tempos && song.tempos.length ? song.tempos : [{ beat: 0, bpm: song.bpm }];
+    const bpmAt = (beat) => {
+      let b = tempos[0].bpm;
+      for (const t of tempos) { if (t.beat <= beat + 1e-6) b = t.bpm; else break; }
+      return b;
+    };
 
-    // chord labels for the sheet (grouped by hand + start)
-    const chordLabels = new Map();
-    notes.forEach((n) => {
-      const k = n.hand + '@' + n.start.toFixed(3);
-      if (!chordLabels.has(k)) chordLabels.set(k, { start: n.start, hand: n.hand, notes: [] });
-      chordLabels.get(k).notes.push(n);
+    // ---------- notation: key signature, spelling, accidentals, note values, chords ----------
+    const keySig = song.imported ? song.keySig || T.detectKey(notes) : song.keySig != null ? song.keySig : T.detectKey(notes);
+    const keyAcc = T.keyAccidentals(keySig);
+    const groups = []; // notes of one hand starting together, drawn on one stem
+    ['R', 'L'].forEach((hand) => {
+      const ns = notes.filter((n) => (n.hand === 'L' ? 'L' : 'R') === hand);
+      const onsets = [...new Set(ns.map((n) => +n.start.toFixed(3)))].sort((a, b) => a - b);
+      const index = new Map(onsets.map((o, i) => [o, i]));
+      const byStart = new Map();
+      ns.forEach((n) => {
+        const k = +n.start.toFixed(3);
+        const next = onsets[index.get(k) + 1];
+        // written length: until the next note in this hand, so overlapping (legato) notes stay readable
+        n.sdur = next != null ? Math.max(Math.min(n.dur, next - n.start), Math.min(n.dur, 0.25)) : n.dur;
+        if (!byStart.has(k)) { const g = { hand, start: n.start, notes: [] }; byStart.set(k, g); groups.push(g); }
+        byStart.get(k).notes.push(n);
+      });
     });
+    groups.sort((a, b) => a.start - b.start);
+    const accMem = new Map(); // an accidental lasts until the end of its bar
+    groups.forEach((g) => {
+      const bar = Math.floor(g.start / barLen + 1e-6);
+      g.notes.sort((a, b) => a.note - b.note);
+      g.notes.forEach((n) => {
+        n.sp = T.spellInKey(n.note, keySig, n.flat);
+        const k = `${bar}:${g.hand}:${n.sp.pos}`;
+        const current = accMem.has(k) ? accMem.get(k) : keyAcc[n.sp.letter];
+        n.showAcc = n.sp.acc !== current;
+        accMem.set(k, n.sp.acc);
+      });
+      g.sdur = Math.min(...g.notes.map((n) => n.sdur));
+      g.value = valueOf(g.sdur);
+    });
+    const nameOf = (n) => T.nameLA(n.sp.letter, n.sp.acc, T.settings.naming === 'both' ? 'solfege' : T.settings.naming);
+    // index of the last group starting at or before a beat
+    const groupAt = (beat) => {
+      let lo = 0, hi = groups.length - 1, ans = -1;
+      while (lo <= hi) { const mid = (lo + hi) >> 1; if (groups[mid].start <= beat + 1e-6) { ans = mid; lo = mid + 1; } else hi = mid - 1; }
+      return ans;
+    };
 
-    // spacing on the sheet adapts to the shortest gap between notes
-    const starts = [...new Set(notes.map((n) => +n.start.toFixed(3)))].sort((a, b) => a - b);
+    // horizontal spacing on the sheet adapts to the shortest gap between notes
     let minGap = 1;
-    for (let i = 1; i < starts.length; i++) minGap = Math.min(minGap, Math.max(0.125, starts[i] - starts[i - 1]));
-    const xpb = Math.min(140, Math.max(50, 28 / minGap));
+    for (let i = 1; i < groups.length; i++) {
+      const gap = groups[i].start - groups[i - 1].start;
+      if (gap > 1e-3) minGap = Math.min(minGap, Math.max(0.25, gap));
+    }
+    const xpb = Math.min(150, Math.max(56, 32 / minGap));
 
     let saved = {};
     try { saved = JSON.parse(localStorage.getItem(STORE) || '{}'); } catch (e) {}
@@ -40,6 +86,7 @@
       metro: saved.metro !== undefined ? saved.metro : true,
       names: saved.names !== undefined ? saved.names : true,
       hints: saved.hints !== undefined ? saved.hints : true,
+      count: saved.count !== undefined ? saved.count : true,
       playing: false,
       finished: false,
       pos: -barLen - 0.001,
@@ -48,7 +95,7 @@
       barWrong: {},
     };
     const persist = () => {
-      try { localStorage.setItem(STORE, JSON.stringify({ mode: S.mode, tempo: S.tempo, metro: S.metro, names: S.names, hints: S.hints })); } catch (e) {}
+      try { localStorage.setItem(STORE, JSON.stringify({ mode: S.mode, tempo: S.tempo, metro: S.metro, names: S.names, hints: S.hints, count: S.count })); } catch (e) {}
     };
     // Settings suggested by today's practice plan (one-shot).
     const preset = P.preset;
@@ -77,9 +124,9 @@
           <button data-v="listen" title="Just listen and watch">👂 Listen</button>
         </div>
         <div class="seg" data-g="hands">
+          <button data-v="left" ${hasL ? '' : 'disabled'} title="Left hand only"><span class="hb l">L</span> Left hand</button>
           <button data-v="both">Both hands</button>
-          <button data-v="right" ${hasR ? '' : 'disabled'}>Right ✋</button>
-          <button data-v="left" ${hasL ? '' : 'disabled'}>🤚 Left</button>
+          <button data-v="right" ${hasR ? '' : 'disabled'} title="Right hand only">Right hand <span class="hb r">R</span></button>
         </div>
         <label class="row small muted">Speed
           <input type="range" min="0.2" max="1.5" step="0.05" data-a="tempo">
@@ -87,6 +134,7 @@
         </label>
         <span class="spacer"></span>
         <button class="btn" data-t="metro" title="Metronome click">🥁 Click</button>
+        <button class="btn" data-t="count" title="Beat counting under the music">🔢 Count</button>
         <button class="btn" data-t="names" title="Note names on the music">🔤 Names</button>
         <button class="btn" data-t="hints" title="Light up the next keys">💡 Hints</button>
       </div>
@@ -98,6 +146,8 @@
         <button class="btn" data-t="loop" title="Repeat a few bars until you know them">🔁 Loop bars</button>
         <label class="small muted">from <select data-a="loopA"></select></label>
         <label class="small muted">to <select data-a="loopB"></select></label>
+        ${song.raw ? '<button class="btn" data-a="parts" title="Choose which instrument parts each hand plays">🎚️ Parts</button>' : ''}
+        ${song.level === 'Custom' && !song.raw ? '<span class="small muted">Import this file again to choose its parts</span>' : ''}
       </div>
       <div class="sheet-strip"><canvas data-c="sheet"></canvas></div>
       <div class="fall-area">
@@ -118,14 +168,15 @@
     $('[data-a=loopA]').value = S.loopA;
     $('[data-a=loopB]').value = S.loopB;
 
+    const tempoText = () => `${Math.round(S.tempo * 100)}% · ${Math.round(bpmAt(Math.max(0, S.pos)) * S.tempo)} bpm`;
     function syncUI() {
       main.querySelectorAll('.seg').forEach((seg) => {
         const val = S[seg.dataset.g];
         seg.querySelectorAll('button').forEach((b) => b.classList.toggle('active', b.dataset.v === val));
       });
-      ['metro', 'names', 'hints', 'loop'].forEach((k) => $(`[data-t=${k}]`).classList.toggle('on', S[k]));
+      ['metro', 'count', 'names', 'hints', 'loop'].forEach((k) => $(`[data-t=${k}]`).classList.toggle('on', S[k]));
       $('[data-a=tempo]').value = S.tempo;
-      $('[data-o=tempo]').textContent = `${Math.round(S.tempo * 100)}% · ${Math.round(song.bpm * S.tempo)} bpm`;
+      $('[data-o=tempo]').textContent = tempoText();
       $('[data-a=play]').textContent = S.playing ? '⏸ Pause' : '▶ Play';
     }
 
@@ -144,6 +195,10 @@
       if (a.dataset.a === 'back') PL.App.go('songs');
       if (a.dataset.a === 'play') togglePlay();
       if (a.dataset.a === 'restart') { restart(); S.playing = true; syncUI(); }
+      if (a.dataset.a === 'parts') {
+        S.playing = false; syncUI();
+        PL.App.pickTracks(song, (updated) => { PL.App.replaceImported(updated); PL.App.go('songs', updated.id); });
+      }
     });
     main.addEventListener('input', (e) => {
       const a = e.target.dataset.a;
@@ -160,9 +215,9 @@
       }
     });
 
-    const isActive = (n) =>
-      S.mode !== 'listen' && n.note >= RL && n.note <= RH && (S.hands === 'both' || (S.hands === 'right' && n.hand === 'R') || (S.hands === 'left' && n.hand === 'L'));
-    const bps = () => (song.bpm * S.tempo) / 60;
+    const handChosen = (n) => S.hands === 'both' || (S.hands === 'right' ? n.hand === 'R' : n.hand === 'L');
+    const isActive = (n) => S.mode !== 'listen' && n.note >= RL && n.note <= RH && handChosen(n);
+    const bps = () => (bpmAt(Math.max(0, S.pos)) * S.tempo) / 60;
     const addWrong = () => {
       S.wrong++;
       const b = Math.max(0, Math.floor(S.pos / barLen));
@@ -358,15 +413,15 @@
       ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r);
       ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath();
     }
-    const shortName = (n) => T.name(n, { naming: T.settings.naming === 'both' ? 'solfege' : T.settings.naming });
+    const beatInBar = (beat) => (((beat % barLen) + barLen) % barLen) / beatUnit; // 0-based, can be fractional
 
     function drawFall() {
       const { ctx, w, h, rect } = sizeCanvas(fallC);
       ctx.clearRect(0, 0, w, h);
       const kr = kb.el.getBoundingClientRect();
       const offX = kr.left - rect.left, kw = kr.width;
-      const look = Math.max(2, 2.6 * bps());
-      const ppb = h / look;
+      const ppb = Math.max(70, Math.min(150, h / 3.2)); // pixels per beat: same look at every speed
+      const look = h / ppb;
       const pos = S.pos;
 
       // key lanes
@@ -377,15 +432,17 @@
           ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke();
         }
       }
-      // bar & beat lines
+      // bar & beat lines with counts
+      ctx.font = '11px sans-serif';
       for (let b = Math.floor(pos / beatUnit); b * beatUnit < pos + look; b++) {
         const beat = b * beatUnit;
         if (beat < 0) continue;
         const y = h - (beat - pos) * ppb;
-        const isBar = Math.abs(beat % barLen) < 1e-6;
-        ctx.strokeStyle = isBar ? 'rgba(255,255,255,.22)' : 'rgba(255,255,255,.06)';
+        const isBar = Math.abs(beatInBar(beat)) < 1e-6;
+        ctx.strokeStyle = isBar ? 'rgba(255,255,255,.25)' : 'rgba(255,255,255,.08)';
         ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke();
-        if (isBar) { ctx.fillStyle = 'rgba(255,255,255,.35)'; ctx.font = '11px sans-serif'; ctx.fillText('bar ' + (beat / barLen + 1), 6, y - 4); }
+        ctx.fillStyle = isBar ? 'rgba(255,255,255,.5)' : 'rgba(255,255,255,.3)';
+        ctx.fillText(isBar ? `bar ${Math.round(beat / barLen) + 1} · 1` : String(Math.round(beatInBar(beat)) + 1), 6, y - 4);
       }
       // loop region
       if (S.loop) {
@@ -404,18 +461,25 @@
         let col = T.settings.colors ? T.color(n.note) : n.hand === 'R' ? '#7c9cff' : '#3ecf8e';
         if (n.hit) col = '#3ecf8e';
         if (n.miss) col = '#ff5d6c';
-        ctx.globalAlpha = isActive(n) || S.mode === 'listen' ? 1 : 0.35;
+        ctx.globalAlpha = (S.mode === 'listen' ? handChosen(n) : isActive(n)) ? 1 : 0.3;
         rr(ctx, x, yt, wd, hgt, 5);
         ctx.fillStyle = col; ctx.fill();
         if (kg.black) { ctx.fillStyle = 'rgba(0,0,0,.35)'; ctx.fill(); }
+        if (n.hand === 'L') { // left hand: diagonal stripes
+          ctx.save(); ctx.clip();
+          ctx.strokeStyle = 'rgba(0,0,0,.28)'; ctx.lineWidth = 3;
+          for (let sx = x - hgt; sx < x + wd; sx += 9) { ctx.beginPath(); ctx.moveTo(sx, yt + hgt); ctx.lineTo(sx + hgt, yt); ctx.stroke(); }
+          ctx.restore();
+          rr(ctx, x, yt, wd, hgt, 5);
+        }
         ctx.lineWidth = 2;
-        ctx.strokeStyle = g && g.notes.includes(n) ? '#fff' : n.hand === 'L' ? 'rgba(0,0,0,.55)' : 'rgba(255,255,255,.45)';
+        ctx.strokeStyle = g && g.notes.includes(n) ? '#fff' : n.hand === 'L' ? '#3ecf8e' : '#9db4ff';
         ctx.stroke();
         if (S.names && wd > 13 && hgt > 16) {
           ctx.fillStyle = kg.black ? '#fff' : '#111';
           ctx.font = `bold ${wd > 24 ? 12 : 9}px sans-serif`;
           ctx.textAlign = 'center';
-          ctx.fillText(shortName(n.note), x + wd / 2, yb - 7);
+          ctx.fillText(nameOf(n), x + wd / 2, yb - 7);
           ctx.textAlign = 'left';
         }
         ctx.globalAlpha = 1;
@@ -431,11 +495,13 @@
     function drawSheet() {
       const { ctx, w, h } = sizeCanvas(sheetC);
       const s = 9;
-      const top = { treble: 40, bass: 40 + 4 * s + 50 };
+      const top = { treble: 34, bass: 130 };
       const { TOP, MID, BOT } = T.STAFF;
       const Y = (p, c) => top[c] + (TOP[c] - p) * (s / 2);
-      const playX = Math.max(130, w * 0.28);
+      const panel = 66 + Math.abs(keySig) * 8;
+      const playX = Math.max(panel + 70, w * 0.28);
       const pos = Math.max(0, S.pos);
+      const rx = s * 0.62, ry = s * 0.46;
       ctx.fillStyle = '#f7f4ea'; ctx.fillRect(0, 0, w, h);
 
       ctx.strokeStyle = '#333'; ctx.lineWidth = 1;
@@ -443,92 +509,168 @@
         for (let i = 0; i < 5; i++) { const y = top[c] + i * s; ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke(); }
       });
 
-      const beatL = pos - playX / xpb, beatR = pos + (w - playX) / xpb;
-      // bar lines
+      const beatL = pos - (playX - panel) / xpb, beatR = pos + (w - playX) / xpb;
+      // bar lines and numbers
       ctx.font = '10px sans-serif'; ctx.fillStyle = '#777';
       for (let b = Math.max(0, Math.floor(beatL / barLen)); b * barLen <= beatR; b++) {
         const x = playX + (b * barLen - pos) * xpb;
+        if (x < panel) continue;
         ctx.strokeStyle = '#333'; ctx.lineWidth = 1.2;
         ctx.beginPath(); ctx.moveTo(x, top.treble); ctx.lineTo(x, top.bass + 4 * s); ctx.stroke();
-        ctx.fillText(b + 1, x + 3, top.treble - 16);
+        ctx.fillText(b + 1, x + 3, top.treble - 14);
       }
       // playhead band
-      ctx.fillStyle = 'rgba(124,156,255,.16)'; ctx.fillRect(playX - 14, 10, 28, h - 20);
+      ctx.fillStyle = 'rgba(124,156,255,.16)'; ctx.fillRect(playX - 14, 8, 28, h - 16);
 
-      const g = S.mode === 'wait' ? currentGroup() : null;
-      for (const n of notes) {
-        if (n.start > beatR) break;
-        if (n.start < beatL - 1) continue;
-        const c = n.hand === 'L' ? 'bass' : 'treble';
-        const p = T.staffPos(n.note, n.flat);
-        const x = playX + (n.start - pos) * xpb;
-        const y = Y(p, c);
-        const rx = s * 0.62, ry = s * 0.46;
-        ctx.strokeStyle = '#333'; ctx.lineWidth = 1;
-        for (let q = BOT[c] - 2; q >= p; q -= 2) { ctx.beginPath(); ctx.moveTo(x - 11, Y(q, c)); ctx.lineTo(x + 11, Y(q, c)); ctx.stroke(); }
-        for (let q = TOP[c] + 2; q <= p; q += 2) { ctx.beginPath(); ctx.moveTo(x - 11, Y(q, c)); ctx.lineTo(x + 11, Y(q, c)); ctx.stroke(); }
-
-        const d = n.dur;
-        const hollow = d >= 1.9;
-        let col = T.settings.colors ? T.color(n.note) : '#111';
-        if (n.hit) col = '#1f9e62';
-        if (n.miss) col = '#e0364a';
-        if (g && g.notes.includes(n)) { ctx.fillStyle = 'rgba(124,156,255,.35)'; ctx.beginPath(); ctx.arc(x, y, s * 1.3, 0, 7); ctx.fill(); }
-        ctx.save(); ctx.translate(x, y); ctx.rotate(-0.35);
-        ctx.beginPath(); ctx.ellipse(0, 0, rx, ry, 0, 0, 7);
-        if (hollow) { ctx.fillStyle = '#f7f4ea'; ctx.fill(); ctx.lineWidth = 2.4; ctx.strokeStyle = col === '#111' ? '#111' : col; ctx.stroke(); }
-        else { ctx.fillStyle = col; ctx.fill(); ctx.lineWidth = 1.2; ctx.strokeStyle = '#111'; ctx.stroke(); }
-        ctx.restore();
-        // stem + flags
-        if (d < 3.9) {
-          const up = p < MID[c];
-          const sx = up ? x + rx - 1 : x - rx + 1, sy2 = up ? y - s * 3.3 : y + s * 3.3;
-          ctx.strokeStyle = '#111'; ctx.lineWidth = 1.3;
-          ctx.beginPath(); ctx.moveTo(sx, y); ctx.lineTo(sx, sy2); ctx.stroke();
-          const flags = d < 0.4 ? 2 : d < 0.9 ? 1 : 0;
-          for (let f = 0; f < flags; f++) {
-            const fy = sy2 + (up ? 1 : -1) * f * 6;
-            ctx.beginPath(); ctx.moveTo(sx, fy); ctx.quadraticCurveTo(sx + 9, fy + (up ? 6 : -6), sx + 6, fy + (up ? 13 : -13)); ctx.stroke();
-          }
+      // beat counting between the staves: 1 & 2 & 3 &
+      if (S.count) {
+        const step = xpb * beatUnit >= 44 ? beatUnit / 2 : beatUnit;
+        const cy = top.treble + 4 * s + 38;
+        const curBeat = Math.floor(pos / beatUnit + 1e-6);
+        ctx.textAlign = 'center';
+        for (let k = Math.max(0, Math.floor(beatL / step)); k * step <= beatR; k++) {
+          const b = k * step, x = playX + (b - pos) * xpb;
+          if (x < panel + 8) continue;
+          const inBar = beatInBar(b);
+          const half = Math.abs(inBar - Math.round(inBar)) > 1e-6;
+          const now = !half && S.pos >= 0 && Math.round(b / beatUnit) === curBeat;
+          ctx.font = now ? 'bold 15px sans-serif' : half ? '10px sans-serif' : 'bold 11px sans-serif';
+          ctx.fillStyle = now ? '#3b5bdb' : half ? '#aaa' : '#666';
+          ctx.fillText(half ? '&' : String(Math.round(inBar) + 1), x, cy);
         }
-        if ([0.75, 1.5, 3].some((v) => Math.abs(d - v) < 0.02)) { ctx.fillStyle = '#111'; ctx.beginPath(); ctx.arc(x + rx + 4, y - (p % 2 === 0 ? 0 : 0), 1.8, 0, 7); ctx.fill(); }
-        const sp = T.spell(n.note, n.flat);
-        if (sp.acc) { ctx.fillStyle = '#111'; ctx.font = '15px serif'; ctx.fillText(sp.acc > 0 ? '♯' : '♭', x - rx - 11, y + 5); }
-      }
-      // note names under each staff
-      if (S.names) {
-        ctx.font = 'bold 10px sans-serif'; ctx.textAlign = 'center';
-        chordLabels.forEach((cl) => {
-          if (cl.start < beatL - 1 || cl.start > beatR) return;
-          const x = playX + (cl.start - pos) * xpb;
-          const txt = cl.notes.map((n) => shortName(n.note)).join('/');
-          ctx.fillStyle = '#555';
-          ctx.fillText(txt, x, cl.hand === 'L' ? h - 4 : top.treble + 4 * s + 26);
-        });
         ctx.textAlign = 'left';
       }
-      // clef panel
-      ctx.fillStyle = '#f7f4ea'; ctx.fillRect(0, 0, 64, h);
+
+      const wg = S.mode === 'wait' ? currentGroup() : null;
+      const labelEnd = { R: -1e9, L: -1e9 };
+      ctx.save(); // keep notes out of the clef panel
+      ctx.beginPath(); ctx.rect(panel, 0, w - panel, h); ctx.clip();
+      for (let gi = Math.max(0, groupAt(beatL - 2)); gi < groups.length; gi++) {
+        const grp = groups[gi];
+        if (grp.start > beatR) break;
+        const x = playX + (grp.start - pos) * xpb;
+        if (x < panel - 6) continue;
+        const c = grp.hand === 'L' ? 'bass' : 'treble';
+        const [, type, dotted, tuplet] = grp.value;
+        const ps = grp.notes.map((n) => n.sp.pos);
+        const up = ps.reduce((a, b) => a + b, 0) / ps.length < MID[c];
+        const lowP = Math.min(...ps), highP = Math.max(...ps);
+
+        // ledger lines
+        ctx.strokeStyle = '#333'; ctx.lineWidth = 1;
+        for (let q = BOT[c] - 2; q >= lowP; q -= 2) { ctx.beginPath(); ctx.moveTo(x - 11, Y(q, c)); ctx.lineTo(x + 11, Y(q, c)); ctx.stroke(); }
+        for (let q = TOP[c] + 2; q <= highP; q += 2) { ctx.beginPath(); ctx.moveTo(x - 11, Y(q, c)); ctx.lineTo(x + 11, Y(q, c)); ctx.stroke(); }
+        if (wg && grp.notes.some((n) => wg.notes.includes(n))) {
+          ctx.fillStyle = 'rgba(124,156,255,.3)';
+          ctx.beginPath(); ctx.ellipse(x, (Y(lowP, c) + Y(highP, c)) / 2, s * 1.4, (Y(lowP, c) - Y(highP, c)) / 2 + s * 1.2, 0, 0, 7); ctx.fill();
+        }
+
+        // note heads (neighbouring notes in a chord sit on opposite sides of the stem)
+        let shifted = false, accCount = 0;
+        grp.notes.forEach((n, i) => {
+          const dx = i > 0 && ps[i] - ps[i - 1] === 1 && !shifted ? (up ? 2 * rx - 1 : -(2 * rx - 1)) : 0;
+          shifted = dx !== 0;
+          const hx = x + dx, y = Y(n.sp.pos, c);
+          let col = T.settings.colors ? T.color(n.note) : '#111';
+          if (n.hit) col = '#1f9e62';
+          if (n.miss) col = '#e0364a';
+          ctx.save(); ctx.translate(hx, y); ctx.rotate(-0.35);
+          ctx.beginPath(); ctx.ellipse(0, 0, rx, ry, 0, 0, 7);
+          if (type === 'w' || type === 'h') { ctx.fillStyle = '#f7f4ea'; ctx.fill(); ctx.lineWidth = 2.4; ctx.strokeStyle = col; ctx.stroke(); }
+          else { ctx.fillStyle = col; ctx.fill(); ctx.lineWidth = 1.2; ctx.strokeStyle = '#111'; ctx.stroke(); }
+          ctx.restore();
+          if (dotted) {
+            const onLine = (n.sp.pos - TOP[c]) % 2 === 0;
+            ctx.fillStyle = '#111'; ctx.beginPath(); ctx.arc(hx + rx + 4, y - (onLine ? s / 2 : 0), 1.8, 0, 7); ctx.fill();
+          }
+          if (n.showAcc) {
+            ctx.fillStyle = '#111'; ctx.font = '15px serif';
+            ctx.fillText(n.sp.acc > 0 ? '♯' : n.sp.acc < 0 ? '♭' : '♮', x - rx - 11 - accCount * 8, y + 5);
+            accCount++;
+          }
+        });
+
+        // one stem for the whole chord, with flags
+        if (type !== 'w') {
+          const sx = up ? x + rx - 1 : x - rx + 1;
+          const y1 = up ? Y(lowP, c) : Y(highP, c);
+          const y2 = up ? Y(highP, c) - s * 3.3 : Y(lowP, c) + s * 3.3;
+          ctx.strokeStyle = '#111'; ctx.lineWidth = 1.6;
+          ctx.beginPath(); ctx.moveTo(sx, y1); ctx.lineTo(sx, y2); ctx.stroke();
+          const flags = type === 'e' ? 1 : type === 's' ? 2 : 0;
+          for (let f = 0; f < flags; f++) {
+            const fy = y2 + (up ? 1 : -1) * f * 6;
+            ctx.beginPath(); ctx.moveTo(sx, fy); ctx.quadraticCurveTo(sx + 9, fy + (up ? 6 : -6), sx + 6, fy + (up ? 13 : -13)); ctx.stroke();
+          }
+          if (tuplet) { ctx.fillStyle = '#555'; ctx.font = 'italic bold 10px serif'; ctx.fillText('3', sx - 3, up ? y2 - 3 : y2 + 11); }
+        }
+
+        // note names, skipped when they would overlap
+        if (S.names) {
+          ctx.font = 'bold 10px sans-serif';
+          const txt = [...new Set(grp.notes.map(nameOf))].join('/');
+          const tw = ctx.measureText(txt).width;
+          if (x - tw / 2 > labelEnd[grp.hand] + 4) {
+            ctx.fillStyle = '#555'; ctx.textAlign = 'center';
+            ctx.fillText(txt, x, grp.hand === 'L' ? top.bass + 4 * s + 24 : top.treble + 4 * s + 20);
+            ctx.textAlign = 'left';
+            labelEnd[grp.hand] = x + tw / 2;
+          }
+        }
+      }
+
+      ctx.restore();
+
+      // clef, key signature and time signature panel
+      ctx.fillStyle = '#f7f4ea'; ctx.fillRect(0, 0, panel, h);
       ctx.strokeStyle = '#333'; ctx.lineWidth = 1;
-      ['treble', 'bass'].forEach((c) => { for (let i = 0; i < 5; i++) { const y = top[c] + i * s; ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(64, y); ctx.stroke(); } });
+      ['treble', 'bass'].forEach((c) => { for (let i = 0; i < 5; i++) { const y = top[c] + i * s; ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(panel, y); ctx.stroke(); } });
       T.drawClef(ctx, 'treble', 6, top.treble, s);
       T.drawClef(ctx, 'bass', 4, top.bass, s);
+      const SH = [38, 35, 39, 36, 33, 37, 34], FL = [34, 37, 33, 36, 32, 35, 31]; // treble staff positions
       ctx.fillStyle = '#111';
-      ctx.font = `bold ${s * 2}px serif`;
       ['treble', 'bass'].forEach((c) => {
-        ctx.fillText(song.timeSig[0], 44, top[c] + s * 1.8);
-        ctx.fillText(song.timeSig[1], 44, top[c] + s * 3.8);
+        ctx.font = '16px serif';
+        for (let k = 0; k < Math.abs(keySig); k++) {
+          const p = (keySig > 0 ? SH : FL)[k] - (c === 'bass' ? 14 : 0);
+          ctx.fillText(keySig > 0 ? '♯' : '♭', 38 + k * 8, Y(p, c) + 5);
+        }
+        ctx.font = `bold ${s * 2}px serif`;
+        ctx.fillText(song.timeSig[0], 42 + Math.abs(keySig) * 8, top[c] + s * 1.8);
+        ctx.fillText(song.timeSig[1], 42 + Math.abs(keySig) * 8, top[c] + s * 3.8);
       });
-      ctx.fillStyle = '#7c9cff'; ctx.fillRect(playX - 1, 12, 2, h - 24);
+      ctx.fillStyle = '#7c9cff'; ctx.fillRect(playX - 1, 10, 2, h - 20);
     }
 
+    // What is sounding now in each hand, with its written length.
+    function nowPlaying() {
+      const last = groupAt(S.pos);
+      const found = {};
+      for (let i = last; i >= 0 && i > last - 40; i--) {
+        const grp = groups[i];
+        if (!found[grp.hand] && S.pos < grp.start + grp.sdur) found[grp.hand] = grp;
+      }
+      return ['R', 'L'].filter((hd) => found[hd]).map((hd) => {
+        const grp = found[hd];
+        const [, type, dotted, tuplet] = grp.value;
+        const beats = +(grp.sdur / beatUnit).toFixed(2);
+        return `<div><span class="hb ${hd.toLowerCase()}">${hd}</span> <b>${[...new Set(grp.notes.map(nameOf))].join(' ')}</b> · ${tuplet ? 'triplet ' : ''}${dotted ? 'dotted ' : ''}${VALUE_NAME[type]} · ${beats} beat${beats === 1 ? '' : 's'}</div>`;
+      }).join('');
+    }
+
+    let hudHtml = '';
     function drawHud() {
       const st = stats();
       const bar = Math.max(1, Math.floor(Math.max(0, S.pos) / barLen) + 1);
       $('[data-o=bar]').textContent = `bar ${Math.min(bar, totalBars)} / ${totalBars}`;
-      if (S.mode === 'listen') { hud.innerHTML = '👂 Listening — watch which keys light up'; return; }
-      const waitingMsg = S.mode === 'wait' && !S.playing && !S.finished ? '<div>Press the glowing key to start</div>' : '';
-      hud.innerHTML = `<b>${st.hits}</b> / ${st.total} notes · <span style="color:var(--bad)">${S.wrong} wrong</span>${waitingMsg}`;
+      const tt = tempoText();
+      if ($('[data-o=tempo]').textContent !== tt) $('[data-o=tempo]').textContent = tt;
+      const beatTxt = S.pos < 0 ? 'Count-in…' : `Beat <b>${Math.floor(beatInBar(S.pos) + 1e-6) + 1}</b> of ${song.timeSig[0]}`;
+      let html = `<div class="beatnow">${beatTxt}</div>${nowPlaying()}`;
+      if (S.mode === 'listen') html += '<div class="muted small">👂 Listening — watch the keys and count along</div>';
+      else html += `<div><b>${st.hits}</b> / ${st.total} notes · <span style="color:var(--bad)">${S.wrong} wrong</span></div>${S.mode === 'wait' && !S.playing && !S.finished ? '<div>Press the glowing key to start</div>' : ''}`;
+      if (hasL && hasR) html += '<div class="small muted hud-legend">Blue outline = right hand · green stripes = left hand</div>';
+      if (html !== hudHtml) { hud.innerHTML = html; hudHtml = html; }
     }
 
     syncUI();
