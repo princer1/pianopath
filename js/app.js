@@ -71,6 +71,7 @@
     main = fresh;
     App.setKbdHint('');
     App.kb.clearHints();
+    App.kb.clearFingers();
     App.kb.setRange(48, 84);
     document.querySelectorAll('#nav button').forEach((b) => b.classList.toggle('active', b.dataset.view === (view || 'home')));
     if (view === 'learn' && arg) cleanup = PL.Lessons.mount(main, arg);

@@ -11,6 +11,8 @@
       this.labels = 'all';        // 'all' | 'c' | 'none'
       this.keys = new Map();
       this.hints = new Set();
+      this.fingers = null;        // Map note -> finger number (1 = thumb … 5 = pinky)
+      this.fingerHand = 'R';
       el.addEventListener('pointerdown', (e) => this._pointer(e, 'down'));
       window.addEventListener('pointerup', () => this._releasePointer());
       el.addEventListener('pointerover', (e) => { if (this.pointerNote != null && e.buttons) this._pointer(e, 'drag'); });
@@ -66,6 +68,7 @@
         k.style.width = g.w * 100 + '%';
         k.dataset.note = n;
         this._label(k, n);
+        this._finger(k, n);
         if (PL.Input.down.has(n)) k.classList.add('down');
         if (this.hints.has(n)) k.classList.add('hint');
         this.el.appendChild(k);
@@ -110,6 +113,21 @@
     clearHints() {
       this.hints.forEach((n) => { const k = this.keys.get(n); if (k) k.classList.remove('hint'); });
       this.hints.clear();
+    }
+    // Show finger numbers for a hand position. hand: 'R' | 'L'
+    setFingers(map, hand = 'R') {
+      this.fingers = map;
+      this.fingerHand = hand;
+      this.keys.forEach((k, n) => this._finger(k, n));
+    }
+    clearFingers() { if (this.fingers) this.setFingers(null); }
+    _finger(k, n) {
+      let b = k.querySelector('.finger');
+      const f = this.fingers && this.fingers.get(n);
+      if (!f) { if (b) b.remove(); return; }
+      if (!b) { b = document.createElement('div'); b.className = 'finger'; k.appendChild(b); }
+      b.textContent = f;
+      b.classList.toggle('left', this.fingerHand === 'L');
     }
     flash(n, cls, ms = 350) {
       const k = this.keys.get(n);

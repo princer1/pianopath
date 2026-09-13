@@ -25,6 +25,7 @@
       const m = mark(n);
       svg += `<rect x="${i * ww + 1}" y="1" width="${ww}" height="${wh}" rx="3" fill="${m ? m.color : '#fff'}" stroke="#555"/>`;
       if (m && m.label) svg += `<text x="${i * ww + 1 + ww / 2}" y="${wh - 8}" font-size="11" font-weight="700" text-anchor="middle" fill="#111" font-family="sans-serif">${m.label}</text>`;
+      if (m && m.finger) svg += `<circle cx="${i * ww + 1 + ww / 2}" cy="${bh + 16}" r="10" fill="${m.fcolor}"/><text x="${i * ww + 1 + ww / 2}" y="${bh + 20}" font-size="12" font-weight="700" text-anchor="middle" fill="#0b0d18" font-family="sans-serif">${m.finger}</text>`;
     });
     for (let n = from; n <= to; n++) {
       if (!T.isBlack(n)) continue;
@@ -39,11 +40,40 @@
   const staff = (opts) => `<div class="staff-box" style="max-width:100%;overflow-x:auto">${T.staffSVG(opts)}</div>`;
   const labeled = (ns, clef) => staff({ clef, stems: false, gapX: 40, notes: ns.map((n) => ({ note: n, label: nm(n), color: T.noteColor(n) })) });
   L.extraUnits = []; // builders added by theory-lessons.js / ear.js
-  L.h = { N, whites, pick, nm, miniKeys, staff, labeled, WHITE_PC, BLACK_PC };
+
+  // ---------- hand positions ----------
+  // Five white keys under five fingers. Right hand: thumb (1) on the lowest key. Left hand: pinky (5) on the lowest key.
+  function hp(hand, low, label) {
+    const notes = [];
+    for (let n = N(low); notes.length < 5; n++) if (!T.isBlack(n)) notes.push(n);
+    return { hand, notes, label };
+  }
+  const fingerIn = (pos, n) => { const i = pos.notes.indexOf(n); return i < 0 ? 0 : pos.hand === 'R' ? i + 1 : 5 - i; };
+  const posName = (pos) => `${pos.hand === 'R' ? '✋ <b>Right hand</b>' : '🤚 <b>Left hand</b>'} · ${pos.label}`;
+  const posMarks = (pos) => (n) => {
+    const f = fingerIn(pos, n);
+    return f ? { color: pos.hand === 'R' ? '#cfdcff' : '#c9f2d9', label: nm(n), finger: f, fcolor: pos.hand === 'R' ? '#7c9cff' : '#3ecf8e' } : null;
+  };
+  function posKeys(pos) {
+    let a = pos.notes[0] - 1, b = pos.notes[4] + 1; // one extra white key on each side
+    while (T.isBlack(a)) a--;
+    while (T.isBlack(b)) b++;
+    return miniKeys(a, b, posMarks(pos));
+  }
+  L.h = { N, whites, pick, nm, miniKeys, staff, labeled, WHITE_PC, BLACK_PC, hp, fingerIn, posName, posKeys };
 
   // ---------- lesson catalogue ----------
   // Rebuilt whenever the note-name setting changes, so titles use the right names.
   L.refresh = function () {
+  const P = {
+    rC4: hp('R', 'C4', `<b>C position</b> — thumb on middle ${nm(60)}`),
+    rG4: hp('R', 'G4', `<b>G position</b> — thumb on ${nm(67)}`),
+    rC5: hp('R', 'C5', `<b>high ${nm(72)} position</b> — thumb on treble ${nm(72)}`),
+    lC3: hp('L', 'C3', `<b>bass ${nm(48)} position</b> — pinky on bass ${nm(48)}`),
+    lF3: hp('L', 'F3', `<b>middle ${nm(60)} position</b> — thumb on middle ${nm(60)}`),
+    lF2: hp('L', 'F2', `<b>low position</b> — thumb on bass ${nm(48)}`),
+  };
+  const fingerList = (pos) => pos.notes.map((n) => `<b>${fingerIn(pos, n)}</b> ${nm(n)}`).join(' · ');
   L.units = [
     {
       title: '1 · Find your way on the keyboard',
@@ -106,37 +136,103 @@
               <div class="tip">Higher on the page = higher sound = further right on the keyboard.</div>`,
             () => `<h2>The treble clef 𝄞 — right hand</h2><p>The curly sign at the start is the <b>treble clef</b>. It is usually for your <b>right hand</b>.
               Its curl wraps around the line of <b>${nm(67)}</b>. <b>Middle ${nm(60)}</b> sits on a small extra line below the staff.</p>
-              ${staff({ clef: 'treble', stems: false, gapX: 70, notes: [{ note: 60, label: 'middle ' + nm(60), color: T.noteColor(60) }, { note: 67, label: nm(67) + ' line', color: T.noteColor(67) }] })}
-              <div class="tip">Now we will show one note. Press that key. Take your time — speed comes later.</div>`,
+              ${staff({ clef: 'treble', stems: false, gapX: 70, notes: [{ note: 60, label: 'middle ' + nm(60), color: T.noteColor(60) }, { note: 67, label: nm(67) + ' line', color: T.noteColor(67) }] })}`,
+            () => `<h2>Finger numbers ✋</h2>
+              <p>Pianists number their fingers: <b>1 = thumb</b>, 2 = pointer, 3 = middle, 4 = ring, <b>5 = pinky</b>. Both hands use the same numbers.</p>
+              <p><b>C position:</b> put your <b>right thumb on middle ${nm(60)}</b>. Each finger rests on the next white key:</p>
+              ${posKeys(P.rC4)}<p style="text-align:center">${fingerList(P.rC4)}</p>
+              <div class="tip">Five fingers reach five notes — middle ${nm(60)} up to ${nm(67)}. That's why this lesson stops at ${nm(67)}.
+                In the next lessons you <b>move your hand</b> to reach higher notes. The blue numbers on the keyboard below always show where your fingers go.</div>`,
           ],
-          game: { type: 'staff', clef: 'treble', notes: whites('C4', 'G4'), count: 10 },
+          game: { type: 'staff', clef: 'treble', notes: whites('C4', 'G4'), count: 10, positions: [P.rC4] },
         },
-        { id: 's2', emoji: '🎵', title: `Treble: ${nm(60)} to ${nm(72)}`, desc: 'One full octave on the staff.', range: [48, 84], intro: [], game: { type: 'staff', clef: 'treble', notes: whites('C4', 'C5'), count: 14 } },
-        { id: 's3', emoji: '⬆️', title: 'Treble: high notes', desc: 'Up to the top of the staff.', range: [48, 84],
-          intro: [() => `<h2>Higher notes</h2><p>The staff keeps going up. The top line is <b>${nm(77)}</b>.</p>${labeled(whites('C5', 'G5'), 'treble')}`],
-          game: { type: 'staff', clef: 'treble', notes: whites('C4', 'G5'), count: 16 } },
+        {
+          id: 's2g', emoji: '🖐️', title: 'Treble: G position', desc: `Move your hand up to reach ${nm(69)}, ${nm(71)}, ${nm(72)}, ${nm(74)}.`, range: [48, 84],
+          intro: [() => `<h2>Moving your hand up</h2>
+            <p>Your hand only covers 5 notes. To play higher, <b>lift your whole right hand and move it to the right</b> so your <b>thumb sits on ${nm(67)}</b> — the note on the treble clef's curl.</p>
+            ${posKeys(P.rG4)}<p style="text-align:center">${fingerList(P.rG4)}</p>
+            ${labeled(whites('G4', 'D5'), 'treble')}
+            <div class="tip">Reading trick: ${nm(67)} is the <b>2nd line</b>. Go up line → space → line:
+              ${nm(69)} is the space above it, ${nm(71)} is the <b>middle line</b>, ${nm(72)} the 3rd space, ${nm(74)} the 4th line.</div>`],
+          game: { type: 'staff', clef: 'treble', notes: whites('G4', 'D5'), count: 12, positions: [P.rG4] },
+        },
+        {
+          id: 's2', emoji: '🎵', title: `Treble: ${nm(60)} to ${nm(72)} — switching positions`, desc: 'When to move your hand between C and G position.', range: [48, 84],
+          intro: [() => `<h2>When to switch</h2>
+            <p>Music moves around, so your hand moves too. A simple rule for now — look where the note is compared to the <b>${nm(67)} line</b>:</p>
+            <div class="row" style="justify-content:center;gap:20px">
+              <div style="text-align:center">${posKeys(P.rC4)}<div class="small">${nm(60)} up to ${nm(67)}<br>→ <b>C position</b>, thumb on middle ${nm(60)}</div></div>
+              <div style="text-align:center">${posKeys(P.rG4)}<div class="small">Above the ${nm(67)} line (${nm(69)} ${nm(71)} ${nm(72)} ${nm(74)})<br>→ <b>G position</b>, thumb on ${nm(67)}</div></div>
+            </div>
+            <p>Above every note the app shows which position to use, and says <b>🔄 Move your hand!</b> when you need to switch. ${nm(67)} is in both positions, so for ${nm(67)} you can stay where you are.</p>
+            <div class="tip">Move your hand <b>before</b> you press. If you miss, the app shows the finger and how to count to the note.</div>`],
+          game: { type: 'staff', clef: 'treble', notes: whites('C4', 'C5'), count: 14, positions: [P.rC4, P.rG4] },
+        },
+        {
+          id: 's3', emoji: '⬆️', title: `Treble: high ${nm(72)} position`, desc: 'Thumb on treble C — up to the top of the staff.', range: [48, 84],
+          intro: [() => `<h2>High ${nm(72)} position</h2>
+            <p>For even higher notes, move your right thumb to <b>treble ${nm(72)}</b> — the ${nm(72)} one octave (7 white keys) above middle ${nm(60)}. On the staff it sits in the <b>3rd space</b>.</p>
+            ${posKeys(P.rC5)}<p style="text-align:center">${fingerList(P.rC5)}</p>
+            ${labeled(whites('C5', 'G5'), 'treble')}
+            <p>${nm(72)} = 3rd space · ${nm(74)} = 4th line · ${nm(76)} = 4th space · ${nm(77)} = <b>top line</b> · ${nm(79)} = sitting on top of the staff.</p>
+            <div class="tip">Middle ${nm(60)} is <b>below</b> the staff on a little extra line. Treble ${nm(72)} is <b>inside</b> the staff. Same name, different key.</div>`],
+          game: { type: 'staff', clef: 'treble', notes: whites('C5', 'G5'), count: 12, positions: [P.rC5] },
+        },
+        {
+          id: 's3b', emoji: '🧭', title: 'The whole treble staff', desc: 'Landmark notes: find any note fast.', range: [48, 84],
+          intro: [() => `<h2>Landmark notes</h2>
+            <p>Don't memorise every note. Learn these <b>landmarks</b> and count from the nearest one:</p>
+            ${staff({ clef: 'treble', stems: false, gapX: 80, notes: [[60, 'middle ' + nm(60)], [67, nm(67) + ' line'], [72, 'treble ' + nm(72)], [77, 'top ' + nm(77)]].map(([n, l]) => ({ note: n, label: l, color: T.noteColor(n) })) })}
+            <p>Count <b>line → space → line</b>: every step is the next white key. Example: from the ${nm(67)} line, ${nm(67)} → ${nm(69)} → ${nm(71)} is <b>2 steps up</b>, so ${nm(71)} is the middle line.</p>
+            <div class="tip">Your thumb goes on a landmark too: <b>middle ${nm(60)}</b> (C position) → <b>${nm(67)}</b> (G position) → <b>treble ${nm(72)}</b> (high ${nm(72)} position). Miss a note and the app shows you how to count it.</div>`],
+          game: { type: 'staff', clef: 'treble', notes: whites('C4', 'G5'), count: 16, positions: [P.rC4, P.rG4, P.rC5] },
+        },
         {
           id: 's4', emoji: '🎶', title: 'The bass clef 𝄢 — left hand', desc: 'The lower staff, for your left hand.',
           range: [36, 72],
-          intro: [() => `<h2>The bass clef 𝄢</h2><p>The bass clef is for <b>low notes</b>, usually your <b>left hand</b>. Its two dots sit around the line of <b>${nm(53)}</b>.
-            Middle ${nm(60)} is now on a small extra line <b>above</b> the staff.</p>${labeled(whites('C3', 'C4'), 'bass')}
-            <div class="tip">Same idea as before: step up the staff = next white key to the right.</div>`],
-          game: { type: 'staff', clef: 'bass', notes: whites('C3', 'C4'), count: 12 },
+          intro: [
+            () => `<h2>The bass clef 𝄢</h2><p>The bass clef is for <b>low notes</b>, usually your <b>left hand</b>. Its two dots sit around the line of <b>${nm(53)}</b>.
+              Middle ${nm(60)} is now on a small extra line <b>above</b> the staff.</p>${labeled(whites('C3', 'C4'), 'bass')}
+              <div class="tip">Same idea as before: step up the staff = next white key to the right.</div>`,
+            () => `<h2>Left hand position 🤚</h2>
+              <p>Put your <b>left pinky (5) on bass ${nm(48)}</b> — the ${nm(48)} one octave below middle ${nm(60)}. On the bass staff it is the <b>2nd space</b>.</p>
+              ${posKeys(P.lC3)}<p style="text-align:center">${fingerList(P.lC3)}</p>
+              <div class="tip">On the left hand the thumb is on the <b>right</b> side, so the finger numbers count <b>down</b> as the notes go up. Green numbers on the keyboard show your left hand.</div>`,
+          ],
+          game: { type: 'staff', clef: 'bass', notes: whites('C3', 'G3'), count: 12, positions: [P.lC3] },
         },
-        { id: 's5', emoji: '⬇️', title: 'Bass: low notes', desc: 'Down to the bottom of the bass staff.', range: [36, 72], intro: [], game: { type: 'staff', clef: 'bass', notes: whites('F2', 'C4'), count: 16 } },
+        {
+          id: 's4b', emoji: '🤚', title: 'Bass: up to middle C', desc: 'Move your left hand next to middle C.', range: [36, 72],
+          intro: [() => `<h2>Left hand near middle ${nm(60)}</h2>
+            <p>To reach higher bass notes, move your left hand right: <b>thumb on middle ${nm(60)}</b>, <b>pinky on ${nm(53)}</b> — the ${nm(53)} line between the bass clef dots.</p>
+            ${posKeys(P.lF3)}<p style="text-align:center">${fingerList(P.lF3)}</p>
+            ${labeled(whites('F3', 'C4'), 'bass')}
+            <div class="tip">Switch rule: notes up to the ${nm(55)} space → <b>pinky on bass ${nm(48)}</b>. Notes above it (${nm(57)} ${nm(59)} ${nm(60)}) → <b>thumb on middle ${nm(60)}</b>. The app tells you when to move.</div>`],
+          game: { type: 'staff', clef: 'bass', notes: whites('C3', 'C4'), count: 14, positions: [P.lC3, P.lF3] },
+        },
+        {
+          id: 's5', emoji: '⬇️', title: 'Bass: low notes', desc: 'Down to the bottom of the bass staff.', range: [36, 72],
+          intro: [() => `<h2>Going lower</h2>
+            <p>Move your left hand to the left: <b>thumb on bass ${nm(48)}</b> (2nd space), pinky on low ${nm(41)}.</p>
+            ${posKeys(P.lF2)}<p style="text-align:center">${fingerList(P.lF2)}</p>
+            ${labeled(whites('F2', 'C3'), 'bass')}
+            <div class="tip">Bass landmarks: <b>middle ${nm(60)}</b> (extra line above), the <b>${nm(53)} line</b> (between the clef dots), <b>bass ${nm(48)}</b> (2nd space), <b>${nm(43)}</b> (bottom line).</div>`],
+          game: { type: 'staff', clef: 'bass', notes: whites('F2', 'C4'), count: 16, positions: [P.lF2, P.lC3, P.lF3] },
+        },
         {
           id: 's6', emoji: '🎹', title: 'Grand staff: both hands', desc: 'Real piano music uses both staves together.',
           range: [36, 84],
           intro: [() => `<h2>The grand staff</h2><p>Piano music joins the two staves: <b>treble on top (right hand)</b>, <b>bass below (left hand)</b>. Middle ${nm(60)} sits between them.</p>
-            ${staff({ clef: 'grand', stems: false, gapX: 46, notes: [48, 52, 55, 60, 64, 67, 72].map((n) => ({ note: n, label: nm(n), color: T.noteColor(n) })) })}`],
-          game: { type: 'staff', clef: 'grand', notes: whites('C3', 'C5'), count: 20 },
+            ${staff({ clef: 'grand', stems: false, gapX: 46, notes: [48, 52, 55, 60, 64, 67, 72].map((n) => ({ note: n, label: nm(n), color: T.noteColor(n) })) })}
+            <div class="tip">Keep <b>both hands</b> on the keyboard: right thumb on middle ${nm(60)}, left pinky on bass ${nm(48)}. The app shows which hand plays each note.</div>`],
+          game: { type: 'staff', clef: 'grand', notes: whites('C3', 'C5'), count: 20, positions: [P.rC4, P.rG4, P.lC3, P.lF3] },
         },
         {
           id: 's7', emoji: '♯', title: 'Sharps & flats on the staff', desc: '♯ and ♭ signs next to notes.',
           range: [48, 84],
           intro: [() => `<h2>♯ and ♭ on the staff</h2><p>A <b>♯</b> or <b>♭</b> before a note moves it one key right or left — usually onto a black key.</p>
             ${staff({ clef: 'treble', stems: false, gapX: 56, notes: [[60, 0], [61, 0], [62, 0], [63, 1], [64, 0]].map(([n, f]) => ({ note: n, preferFlat: !!f, label: nm(n, { preferFlat: !!f }) })) })}`],
-          game: { type: 'staff', clef: 'treble', notes: Array.from({ length: 13 }, (_, i) => 60 + i), count: 14, spellBoth: true },
+          game: { type: 'staff', clef: 'treble', notes: Array.from({ length: 13 }, (_, i) => 60 + i), count: 14, spellBoth: true, positions: [P.rC4, P.rG4] },
         },
       ],
     },
@@ -259,27 +355,71 @@
 
   GAMES.staff = function (body, cfg, progress, done) {
     const kb = PL.App.kb;
-    let i = 0, errors = 0, wrongThis = 0, target = null, lock = false;
+    let i = 0, errors = 0, wrongThis = 0, target = null, lock = false, pos = null;
     const t0 = performance.now();
-    body.innerHTML = `<div class="prompt">Which key is this note? Press it.</div><div class="st"></div><div class="feedback"></div>`;
-    const st = body.querySelector('.st'), fb = body.querySelector('.feedback');
+    body.innerHTML = `<div class="prompt">Which key is this note? Press it.</div><div class="handline"></div><div class="st"></div><div class="feedback"></div>`;
+    const st = body.querySelector('.st'), fb = body.querySelector('.feedback'), hl = body.querySelector('.handline');
     const clefOf = (n) => (cfg.clef === 'grand' ? (n >= 60 ? 'treble' : 'bass') : cfg.clef);
-    function draw(reveal) {
+    const whiteOf = (t) => t.note - T.spell(t.note, t.flat).acc; // F♯ -> F, G♭ -> G
+
+    // Pick the hand position for a note: the matching hand for its staff, staying put when possible.
+    function choosePos(t) {
+      const fits = (cfg.positions || []).filter((p) => p.notes.includes(whiteOf(t)));
+      const hand = clefOf(t.note) === 'treble' ? 'R' : 'L';
+      const same = fits.filter((p) => p.hand === hand);
+      const c = same.length ? same : fits;
+      return c.includes(pos) ? pos : c[0] || null;
+    }
+    function showHand() {
+      const np = choosePos(target);
+      if (!np) { pos = null; kb.clearFingers(); hl.innerHTML = clefOf(target.note) === 'treble' ? '✋ <b>Right hand</b>' : '🤚 <b>Left hand</b>'; return; }
+      const moved = pos && np !== pos;
+      pos = np;
+      kb.setFingers(new Map(pos.notes.map((n) => [n, fingerIn(pos, n)])), pos.hand);
+      hl.innerHTML = `${moved ? '<span class="move">🔄 Move your hand!</span> ' : ''}${posName(pos)}`;
+    }
+    const fingerTxt = () => {
+      const f = pos && fingerIn(pos, whiteOf(target));
+      return f ? ` — ${pos.hand === 'R' ? 'right' : 'left'} hand, <b>finger ${f}</b>${T.isBlack(target.note) ? ' (slide it onto the black key)' : ''}` : '';
+    };
+
+    // How to count to the note from the nearest landmark on its staff.
+    function landmark(t) {
+      const LM = clefOf(t.note) === 'treble'
+        ? [[60, `middle ${nm(60)}`, 'the little extra line below the staff'], [67, `the ${nm(67)} line`, 'the 2nd line, where the treble clef curls'], [72, `treble ${nm(72)}`, 'the 3rd space'], [77, nm(77), 'the top line']]
+        : [[60, `middle ${nm(60)}`, 'the little extra line above the staff'], [53, `the ${nm(53)} line`, 'the 4th line, between the bass clef dots'], [48, `bass ${nm(48)}`, 'the 2nd space'], [43, nm(43), 'the bottom line']];
+      const tp = T.staffPos(t.note, t.flat);
+      const [ln, name, where] = LM.reduce((b, l) => (Math.abs(T.staffPos(l[0]) - tp) < Math.abs(T.staffPos(b[0]) - tp) ? l : b));
+      const lp = T.staffPos(ln), d = tp - lp;
+      const path = [];
+      for (let p = lp; ; p += Math.sign(d) || 1) { path.push(T.nameLA(((p % 7) + 7) % 7, 0)); if (p === tp) break; }
+      const acc = T.spell(t.note, t.flat).acc;
+      const accTxt = acc ? `, then the ${acc > 0 ? '♯ moves it to the black key on the right' : '♭ moves it to the black key on the left'}` : '';
+      const html = d === 0
+        ? `This is a landmark note: <b>${name}</b> — ${where}${accTxt}.`
+        : `Start from <b>${name}</b> (${where}) and count ${Math.abs(d)} step${Math.abs(d) > 1 ? 's' : ''} ${d > 0 ? 'up' : 'down'}: ${path.join(' → ')}${accTxt}.`;
+      return { ln, html };
+    }
+
+    // mode: false = note only, 'reveal' = with name, 'landmark' = landmark note + named target
+    function draw(mode) {
       const note = { note: target.note, preferFlat: target.flat };
-      if (reveal) { note.label = nm(target.note, { preferFlat: target.flat }); note.color = T.noteColor(target.note); }
-      st.innerHTML = staff({ clef: cfg.clef, space: 16, width: 300, gapX: 60, notes: [note] });
+      const notes = [note];
+      if (mode) { note.label = nm(target.note, { preferFlat: target.flat }); note.color = T.noteColor(target.note); }
+      if (mode === 'landmark') { const lm = landmark(target).ln; if (lm !== whiteOf(target)) notes.unshift({ note: lm, color: '#d4d4d4', label: nm(lm) }); }
+      st.innerHTML = staff({ clef: cfg.clef, space: 16, width: notes.length > 1 ? 340 : 300, gapX: 90, notes });
     }
     function next() {
       let n = pick(cfg.notes, target && target.note);
       target = { note: n, flat: cfg.spellBoth && T.isBlack(n) && Math.random() < 0.5 };
-      wrongThis = 0; lock = false; kb.clearHints(); draw(false);
+      wrongThis = 0; lock = false; kb.clearHints(); showHand(); draw(false);
       fb.textContent = ''; fb.className = 'feedback';
     }
     const off = PL.Input.on((ev) => {
       if (ev.type !== 'on' || lock) return;
       if (ev.note === target.note) {
-        kb.flash(ev.note, 'good'); i++; progress(i / cfg.count); draw(true); lock = true;
-        fb.innerHTML = `✓ Yes — that is <b>${nm(ev.note, { preferFlat: target.flat })}</b>`; fb.className = 'feedback good';
+        kb.flash(ev.note, 'good'); i++; progress(i / cfg.count); draw('reveal'); lock = true;
+        fb.innerHTML = `✓ Yes — that is <b>${nm(ev.note, { preferFlat: target.flat })}</b>${fingerTxt()}`; fb.className = 'feedback good';
         if (i >= cfg.count) {
           const secs = (performance.now() - t0) / 1000 / cfg.count;
           setTimeout(() => done(cfg.count / (cfg.count + errors), `${Math.round(errors)} mistake${errors === 1 ? '' : 's'} · ${secs.toFixed(1)} s per note`), 700);
@@ -287,18 +427,20 @@
         return;
       }
       wrongThis++; kb.flash(ev.note, 'bad');
+      const dir = ev.note < target.note ? 'higher → to the right' : 'lower ← to the left';
       if (T.pc(ev.note) === T.pc(target.note)) {
         errors += 0.5;
-        fb.innerHTML = `Right name (<b>${nm(ev.note)}</b>) but wrong place — go ${ev.note < target.note ? 'higher → right' : 'lower ← left'}. Use middle ${nm(60)} ● as your landmark.`;
+        fb.innerHTML = `Right name (<b>${nm(ev.note)}</b>) but the wrong one — the note is ${dir}.`;
       } else {
         errors++;
-        fb.innerHTML = `You pressed <b>${nm(ev.note)}</b>. The note is ${ev.note < target.note ? 'higher → to the right' : 'lower ← to the left'}.`;
+        fb.innerHTML = `You pressed <b>${nm(ev.note)}</b>. The note is ${dir}.`;
       }
+      fb.innerHTML += `<div class="tip">💡 ${landmark(target).html}${wrongThis >= 2 ? `<br>It is <b>${nm(target.note, { preferFlat: target.flat })}</b>${fingerTxt()} — the glowing key.` : ''}</div>`;
       fb.className = 'feedback bad';
-      if (wrongThis >= 2) { kb.hint(target.note); draw(true); }
+      if (wrongThis >= 2) { kb.hint(target.note); draw('landmark'); }
     });
     next();
-    return off;
+    return () => { off(); kb.clearFingers(); };
   };
 
   GAMES.beat = function (body, cfg, progress, done) {
