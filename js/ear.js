@@ -27,6 +27,7 @@
     dim: [[0, 3, 6], 'Diminished', '😨 tense'],
     aug: [[0, 4, 8], 'Augmented', '😵 dreamy'],
   };
+  Object.assign(L.h, { IV, CH });
   const MAJ = [0, 2, 4, 5, 7, 9, 11];
   const FEEL = ['home', 'restless', 'sweet', 'leaning', 'strong', 'soft', 'pulling up'];
   const FEEL_LONG = ['calm and finished — home', 'restless, wants to step down to 1', 'sweet and stable', 'leaning down to 3', 'strong and open', 'soft, a little sad', 'unfinished — it pulls up to 1'];
@@ -67,6 +68,7 @@
           api.wrong(`You played <b>${nm(ev.note)}</b> — that is ${ev.note < t ? '<b>too low</b> ⬇, go right →' : '<b>too high</b> ⬆, go left ←'}`);
         },
         onWrong: (n) => { if (n === 2) api.later(play, 800); if (n >= 3) kb().hint(target); },
+        skill: 'ear:pitch:' + T.pc(target),
         reveal: () => nm(target),
         after: () => kb().hint(target),
       };
@@ -83,6 +85,7 @@
         play: () => playSeq(cfg.harmonic ? [[a, b]] : [a, b], 0.8, cfg.harmonic ? 1.5 : 0.8),
         choices: cfg.pool.map((v) => ({ label: IV[v][0], sub: IV[v][1], value: v })),
         answer: s,
+        skill: 'ear:iv:' + s,
         explain: `${IV[s][0]} — ${s} half step${s > 1 ? 's' : ''} ${down ? 'down' : 'up'} (${nm(a)} → ${nm(b)}). Think: ${IV[s][1]}.`,
         after: () => kb().hint([a, b]),
         pause: 1800,
@@ -100,6 +103,7 @@
         play: () => { playSeq([notes], 1, 1.1); playSeq(notes, 0.35, 0.5, 1.4); },
         choices: cfg.types.map((t) => ({ label: CH[t][1], sub: CH[t][2], value: t })),
         answer: type,
+        skill: 'ear:chord:' + type,
         explain: `${CH[type][1]} (${CH[type][2]}): ${notes.map((n) => nm(n)).join(' ')}`,
         after: () => kb().hint(notes),
         pause: 1600,
@@ -155,6 +159,7 @@
         play: () => { playSeq([tri(key), tri(key + 5), tri(key + 7), tri(key)], 0.6, 0.55); playSeq([note], 1, 1.1, 2.9); },
         choices: cfg.pool.map((x) => ({ label: `${x + 1} · ${T.SOLFEGE[x]}`, sub: FEEL[x], value: x })),
         answer: d,
+        skill: 'ear:deg:' + d,
         explain: `Step ${d + 1} (${T.SOLFEGE[d]}) in ${nm(key)} major — ${FEEL_LONG[d]}.`,
         after: () => { if (d) playSeq([note, key + 12], 0.6, 0.6, 0.3); },
         pause: 2000,

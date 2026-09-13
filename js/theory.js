@@ -130,6 +130,17 @@
       svg += `<line x1="${s * 0.5}" x2="${s * 0.5}" y1="${top.treble}" y2="${top.bass + s * 4}" stroke="#222" stroke-width="2"/>`;
     }
 
+    // bands: [{ low, high, color, label?, from?, to? }] — shaded note range (e.g. what a hand position reaches);
+    // from/to are note indexes to limit it horizontally.
+    (opts.bands || []).forEach((b) => {
+      const c = b.clef || (clef === 'grand' ? (b.low >= 60 ? 'treble' : 'bass') : clef);
+      const yt = y(T.staffPos(b.high) + 1.2, c), yb = y(T.staffPos(b.low) - 1.2, c);
+      const x0 = b.from == null ? padL : padL + s * 1.5 + b.from * gapX - gapX * 0.45;
+      const x1 = b.to == null ? width - s * 0.5 : padL + s * 1.5 + b.to * gapX + gapX * 0.45;
+      svg += `<rect x="${x0}" y="${yt}" width="${x1 - x0}" height="${yb - yt}" rx="${s * 0.5}" fill="${b.color}"/>`;
+      if (b.label) svg += `<text x="${(x0 + x1) / 2}" y="${yt - s * 0.3}" font-size="${s * 0.9}" text-anchor="middle" fill="#333" font-weight="700" font-family="sans-serif">${b.label}</text>`;
+    });
+
     notes.forEach((n, i) => {
       const c = n.clef || (clef === 'grand' ? (n.note >= 60 ? 'treble' : 'bass') : clef);
       const pos = T.staffPos(n.note, n.preferFlat);

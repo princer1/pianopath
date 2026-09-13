@@ -45,10 +45,19 @@
       pos: -barLen - 0.001,
       loop: false, loopA: 1, loopB: Math.min(4, totalBars),
       wrong: 0,
+      barWrong: {},
     };
     const persist = () => {
       try { localStorage.setItem(STORE, JSON.stringify({ mode: S.mode, tempo: S.tempo, metro: S.metro, names: S.names, hints: S.hints })); } catch (e) {}
     };
+    // Settings suggested by today's practice plan (one-shot).
+    const preset = P.preset;
+    P.preset = null;
+    if (preset) {
+      S.mode = preset.mode || S.mode;
+      S.tempo = preset.tempo || S.tempo;
+      if ((preset.hands === 'right' && hasR && hasL) || (preset.hands === 'left' && hasL && hasR)) S.hands = preset.hands;
+    }
 
     // keyboard range fitted to the song (at least 3 octaves)
     let lo = Math.min(...notes.map((n) => n.note)) - 2, hi = Math.max(...notes.map((n) => n.note)) + 2;
@@ -154,6 +163,11 @@
     const isActive = (n) =>
       S.mode !== 'listen' && n.note >= RL && n.note <= RH && (S.hands === 'both' || (S.hands === 'right' && n.hand === 'R') || (S.hands === 'left' && n.hand === 'L'));
     const bps = () => (song.bpm * S.tempo) / 60;
+    const addWrong = () => {
+      S.wrong++;
+      const b = Math.max(0, Math.floor(S.pos / barLen));
+      S.barWrong[b] = (S.barWrong[b] || 0) + 1;
+    };
 
     function seekBeat(beat) {
       notes.forEach((n) => {
@@ -165,7 +179,7 @@
       resultEl.hidden = true;
     }
     function restart() {
-      S.playing = false; S.wrong = 0;
+      S.playing = false; S.wrong = 0; S.barWrong = {};
       seekBeat(S.loop ? (S.loopA - 1) * barLen : 0);
       kb.clearHints(); lastHintKey = '';
     }
@@ -202,7 +216,7 @@
         }
         // pressing a note that was already correct in this chord is fine
         const recent = notes.some((n) => n.hit && n.note === ev.note && Math.abs(n.start - S.pos) < 0.3);
-        if (!recent) { S.wrong++; kb.flash(ev.note, 'bad'); }
+        if (!recent) { addWrong(); kb.flash(ev.note, 'bad'); }
       } else {
         const win = Math.min(0.5, 0.22 * bps());
         let best = null;
@@ -212,7 +226,7 @@
           if (Math.abs(n.start - S.pos) <= win && (!best || Math.abs(n.start - S.pos) < Math.abs(best.start - S.pos))) best = n;
         }
         if (best) { best.hit = true; best.delta = (S.pos - best.start) / bps(); kb.flash(ev.note, 'good'); }
-        else { S.wrong++; kb.flash(ev.note, 'bad'); }
+        else { addWrong(); kb.flash(ev.note, 'bad'); }
       }
     });
 
@@ -290,6 +304,12 @@
       const pct = Math.round(st.acc * 100);
       const stars = pct >= 95 && S.tempo >= 0.9 ? 3 : pct >= 85 ? 2 : pct >= 60 ? 1 : 0;
       if (S.hands === 'both' || !(hasL && hasR)) PL.App.setStars('song:' + song.id, stars);
+      const barAcc = Array.from({ length: totalBars }, (_, b) => {
+        const ns = notes.filter((n) => isActive(n) && !n.skip && Math.floor(n.start / barLen + 1e-6) === b);
+        if (!ns.length) return null;
+        return Math.min(1, ns.filter((n) => n.hit).length / (ns.length + (S.barWrong[b] || 0) * 0.5));
+      });
+      PL.Coach.songDone(song.id, { mode: S.mode, pct, tempo: S.tempo, hands: S.hands, single: !(hasL && hasR), bars: barAcc });
       const timed = notes.filter((n) => n.delta != null && !n.skip);
       const avg = timed.length ? timed.reduce((s, n) => s + n.delta, 0) / timed.length : 0;
       let tip = '';

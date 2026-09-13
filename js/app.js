@@ -9,7 +9,7 @@
   let data = null;
   try { data = JSON.parse(localStorage.getItem(KEY)); } catch (e) {}
   data = Object.assign({ stars: {}, days: {} }, data || {});
-  data.settings = Object.assign({ naming: null, colors: true, labels: 'all', sound: true, volume: 0.8, low: 24, high: 107 }, data.settings || {});
+  data.settings = Object.assign({ naming: null, colors: true, labels: 'all', sound: true, volume: 0.8, low: 24, high: 107, instrument: 'synth' }, data.settings || {});
   const KB_SIZES = [['49', 36, 84, '49 keys (C2–C6)'], ['61', 36, 96, '61 keys (C2–C7)'], ['76', 28, 103, '76 keys (E1–G7)'], ['84', 24, 107, '84 keys (C1–B7)'], ['88', 21, 108, '88 keys (A0–C8)']];
   const save = () => { try { localStorage.setItem(KEY, JSON.stringify(data)); } catch (e) {} };
 
@@ -19,6 +19,7 @@
     T.settings.colors = data.settings.colors;
     PL.Input.sound = data.settings.sound;
     PL.Audio.setVolume(data.settings.volume);
+    PL.Audio.useSamples = data.settings.instrument === 'recorded';
     App.kb.setLabels(data.settings.labels);
     PL.Lessons.refresh();
   }
@@ -28,6 +29,9 @@
   App.setStars = (id, n) => { if (n > (data.stars[id] || 0)) { data.stars[id] = n; save(); } };
   App.setKbdHint = (t) => ($('#kbdHint').textContent = t || '');
   App.range = () => [data.settings.low, data.settings.high];
+  App.getDays = () => data.days;
+  App.getInstrument = () => data.settings.instrument;
+  App.setInstrument = (v) => { data.settings.instrument = v; PL.Audio.useSamples = v === 'recorded'; save(); };
 
   App.imported = [];
   try { App.imported = JSON.parse(localStorage.getItem('pl.imported') || '[]'); } catch (e) {}
@@ -54,6 +58,7 @@
     while ((data.days[dayKey(d)] || 0) >= 60) { s++; d.setDate(d.getDate() - 1); }
     return s;
   }
+  App.streak = streak;
 
   // ---------- routing ----------
   let cleanup = null;
@@ -81,7 +86,10 @@
     else if (view === 'songs') renderSongs();
     else if (view === 'free') cleanup = renderFree();
     else if (view === 'settings') renderSettings();
-    else renderHome();
+    else if (view === 'progress') PL.Coach.renderProgress(main);
+    else if (view === 'sound') cleanup = PL.Recorder.mount(main);
+    else if (view === 'review') cleanup = PL.Lessons.run(main, PL.Coach.reviewLesson(arg));
+    else PL.Coach.renderHome(main);
   }
   window.addEventListener('hashchange', route);
   document.addEventListener('click', (e) => {
@@ -112,31 +120,7 @@
   }
 
   // ---------- views ----------
-  function renderHome() {
-    const next = PL.Lessons.all.find((l) => !App.getStars('lesson:' + l.id));
-    const totalStars = Object.values(data.stars).reduce((a, b) => a + b, 0);
-    const today = Math.floor((data.days[dayKey()] || 0) / 60);
-    main.innerHTML = `<div class="wrap">
-      <div class="card hero">
-        <div style="flex:1;min-width:260px">
-          <h1>Your road to Chopin 🌙</h1>
-          <p class="muted">Step by step: <b>find the keys</b> → <b>read the notes</b> → <b>feel the rhythm</b> → <b>play real music</b>. 10–20 minutes a day is the secret.</p>
-          ${next ? `<button class="btn primary big" data-go="learn/${next.id}">Continue: ${next.emoji} ${next.title} →</button>` : `<button class="btn primary big" data-go="songs">All lessons done — play songs →</button>`}
-          <button class="btn big" data-go="ear">👂 Ear workout</button>
-        </div>
-        <div class="row">
-          <div class="stat"><b>🔥 ${streak()}</b><span class="small muted">day streak</span></div>
-          <div class="stat"><b data-live="today">${today} min</b><span class="small muted">today</span></div>
-          <div class="stat"><b>⭐ ${totalStars}</b><span class="small muted">stars</span></div>
-        </div>
-      </div>
-      ${PL.Lessons.units.map((u) => `<div class="unit-title">${u.title}</div><div class="grid">${lessonCards(u)}</div>`).join('')}
-      <div class="unit-title">🎼 Songs</div>
-      <div class="grid">${PL.Songs.list.map((s) => songCard(s)).join('')}</div>
-      <p class="muted small" style="margin-top:20px">Daily routine: 1 lesson (5 min) → 👂 1 ear training lesson (5 min) → 1 song in ⏳ Wait mode, then 🎯 tempo mode slowly (10 min).</p>
-    </div>`;
-  }
-
+  // The home page (today's plan, week, road to Chopin) lives in coach.js.
   function renderLearn(filter) {
     const head = filter === 'ear'
       ? '<h1>👂 Ear training</h1><p class="muted">Learn to recognise notes, intervals, chords and melodies by sound. 5 minutes a day — ears grow slowly but surely.</p>'
@@ -262,10 +246,20 @@
       </div>
       <div class="card stack">
         <label class="row"><input type="checkbox" data-s="sound" ${s.sound ? 'checked' : ''}> App plays piano sound when you press keys <span class="muted small">(turn off if your keyboard has its own speakers)</span></label>
+        <label class="field">Piano sound
+          <select data-instrument>${opt('synth', 'Built-in piano (synthesized)', s.instrument)}${opt('recorded', `My recorded piano (${PL.Samples.count()} recordings)`, s.instrument)}</select></label>
+        <div class="row"><button class="btn" data-go="sound">🎙️ Record my piano's sound</button>
+          <span class="muted small">Uses your audio card and MIDI · about 3–10 minutes. Songs, lessons and ear training then sound like your piano.</span></div>
         <label class="row">Volume <input type="range" min="0" max="1" step="0.05" value="${s.volume}" data-s="volume"></label>
         <div><b>MIDI keyboards:</b> <span class="muted">${PL.Input.devices.length ? PL.Input.devices.join(', ') : 'none found'}</span>
           <button class="btn" data-reconnect>Reconnect</button></div>
         <p class="muted small">Works best in Chrome or Edge. Plug the keyboard in by USB before opening the app.</p>
+      </div>
+      <div class="card stack">
+        <h3 style="margin:0">📋 Practice plan</h3>
+        <label class="field">Daily practice goal
+          <select data-goal>${[10, 15, 20, 30, 45].map((m) => `<option value="${m}" ${m === PL.Coach.getGoal() ? 'selected' : ''}>${m} minutes a day</option>`).join('')}</select></label>
+        <p class="muted small">Today's plan on the home page is sized to this goal. Changing it rebuilds today's plan.</p>
       </div>
       <div class="card stack">
         <h3 style="margin:0">🎹 Your keyboard</h3>
@@ -286,6 +280,8 @@
     });
     main.addEventListener('input', (e) => { if (e.target.dataset.s === 'volume') { s.volume = +e.target.value; PL.Audio.setVolume(s.volume); save(); } });
     main.querySelector('[data-reconnect]').onclick = () => PL.Input.initMIDI(midiStatus).then(route);
+    main.querySelector('[data-goal]').onchange = (e) => PL.Coach.setGoal(+e.target.value);
+    main.querySelector('[data-instrument]').onchange = (e) => App.setInstrument(e.target.value);
     main.querySelector('[data-kbsize]').onchange = (e) => {
       const z = KB_SIZES.find(([k]) => k === e.target.value);
       if (!z) return;
@@ -304,7 +300,7 @@
       });
     };
     main.querySelector('[data-reset]').onclick = () => {
-      if (confirm('Delete all stars and practice history?')) { data.stars = {}; data.days = {}; save(); route(); }
+      if (confirm('Delete all stars and practice history?')) { data.stars = {}; data.days = {}; save(); PL.Coach.reset(); route(); }
     };
   }
 
@@ -315,6 +311,7 @@
     el.querySelector('.txt').textContent = text;
   }
   PL.Input.initMIDI(midiStatus);
+  PL.Samples.load();
   PL.Input.onOctave = (oct) => App.setKbdHint(`Computer keys now start at ${T.name(oct)}${T.octave(oct)}`);
 
   const overlay = $('#startOverlay');

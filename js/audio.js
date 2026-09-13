@@ -27,8 +27,36 @@
   const freq = (n) => 440 * Math.pow(2, (n - 69) / 12);
   const PARTIALS = [[1, 1], [2, 0.42], [3, 0.18], [4, 0.09], [5, 0.04]];
 
-  // Build one voice. Returns { gain, oscs, stopAt(t) }.
+  A.useSamples = false; // true = play the player's recorded piano (samples.js) instead of the synth
+
+  // A voice from a recorded sample, retuned to the requested note.
+  function sampleVoice(s, n, vel, t) {
+    const src = ctx.createBufferSource();
+    src.buffer = s.buffer;
+    src.playbackRate.value = Math.pow(2, (n - s.note) / 12);
+    const out = ctx.createGain();
+    const level = 0.55 * PL.Samples.scale * Math.max(0.25, Math.min(1.6, vel / Math.max(0.05, s.vel)));
+    out.gain.setValueAtTime(level, t);
+    src.connect(out);
+    out.connect(master);
+    src.start(t);
+    return {
+      release(at) {
+        const r = Math.max(at, ctx.currentTime);
+        if (out.gain.cancelAndHoldAtTime) out.gain.cancelAndHoldAtTime(r);
+        else out.gain.cancelScheduledValues(r);
+        out.gain.setTargetAtTime(0.0001, r, 0.09);
+        try { src.stop(r + 1); } catch (e) {}
+      },
+    };
+  }
+
+  // Build one voice. Returns { release(at) }.
   function makeVoice(n, vel, t) {
+    if (A.useSamples && PL.Samples) {
+      const s = PL.Samples.pick(n, vel);
+      if (s) return sampleVoice(s, n, vel, t);
+    }
     const f0 = freq(n);
     const out = ctx.createGain();
     const filter = ctx.createBiquadFilter();

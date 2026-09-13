@@ -54,6 +54,7 @@
       get tries() { return tries; },
       correct(msg) {
         if (lock) return;
+        if (cur.skill && tries === 0) PL.Coach.record(cur.skill, true);
         lock = true;
         fb.innerHTML = '✓ ' + (msg || 'Correct!');
         fb.className = 'feedback good';
@@ -61,6 +62,7 @@
       },
       wrong(msg) {
         if (lock) return;
+        if (cur.skill && tries === 0) PL.Coach.record(cur.skill, false);
         errors++; tries++;
         fb.innerHTML = msg || 'Not quite — try again.';
         fb.className = 'feedback bad';

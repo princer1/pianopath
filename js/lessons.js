@@ -73,6 +73,7 @@
     lF3: hp('L', 'F3', `<b>middle ${nm(60)} position</b> — thumb on middle ${nm(60)}`),
     lF2: hp('L', 'F2', `<b>low position</b> — thumb on bass ${nm(48)}`),
   };
+  L.P = P;
   const fingerList = (pos) => pos.notes.map((n) => `<b>${fingerIn(pos, n)}</b> ${nm(n)}`).join(' · ');
   L.units = [
     {
@@ -165,7 +166,8 @@
               <div style="text-align:center">${posKeys(P.rG4)}<div class="small">Above the ${nm(67)} line (${nm(69)} ${nm(71)} ${nm(72)} ${nm(74)})<br>→ <b>G position</b>, thumb on ${nm(67)}</div></div>
             </div>
             <p>Above every note the app shows which position to use, and says <b>🔄 Move your hand!</b> when you need to switch. ${nm(67)} is in both positions, so for ${nm(67)} you can stay where you are.</p>
-            <div class="tip">Move your hand <b>before</b> you press. If you miss, the app shows the finger and how to count to the note.</div>`],
+            <div class="tip">The rule for every position: <b>is the note under your 5 fingers?</b> Stay. <b>Higher than your pinky?</b> Move up. <b>Lower than your thumb?</b> Move down.
+              On the staff, a <b style="color:#7c9cff">blue band</b> shows the notes your hand reaches. A <b style="color:#ffc857">yellow band</b> means the note is outside it — move first, then press.</div>`],
           game: { type: 'staff', clef: 'treble', notes: whites('C4', 'C5'), count: 14, positions: [P.rC4, P.rG4] },
         },
         {
@@ -184,7 +186,29 @@
             <p>Don't memorise every note. Learn these <b>landmarks</b> and count from the nearest one:</p>
             ${staff({ clef: 'treble', stems: false, gapX: 80, notes: [[60, 'middle ' + nm(60)], [67, nm(67) + ' line'], [72, 'treble ' + nm(72)], [77, 'top ' + nm(77)]].map(([n, l]) => ({ note: n, label: l, color: T.noteColor(n) })) })}
             <p>Count <b>line → space → line</b>: every step is the next white key. Example: from the ${nm(67)} line, ${nm(67)} → ${nm(69)} → ${nm(71)} is <b>2 steps up</b>, so ${nm(71)} is the middle line.</p>
-            <div class="tip">Your thumb goes on a landmark too: <b>middle ${nm(60)}</b> (C position) → <b>${nm(67)}</b> (G position) → <b>treble ${nm(72)}</b> (high ${nm(72)} position). Miss a note and the app shows you how to count it.</div>`],
+            <div class="tip">Your thumb goes on a landmark too: <b>middle ${nm(60)}</b> (C position) → <b>${nm(67)}</b> (G position) → <b>treble ${nm(72)}</b> (high ${nm(72)} position). Miss a note and the app shows you how to count it.</div>`,
+            () => `<h2>When do I move my hand?</h2>
+              <p>Your right hand has <b>3 positions</b> on the treble staff. Each one covers 5 notes, and they overlap:</p>
+              ${staff({
+                clef: 'treble', stems: false, space: 12, gapX: 26,
+                notes: [...whites('C4', 'G4'), ...whites('G4', 'D5'), ...whites('C5', 'G5')].map((n) => ({ note: n, label: nm(n), color: T.noteColor(n) })),
+                bands: [
+                  { low: 60, high: 67, from: 0, to: 4, color: 'rgba(124,156,255,.25)', label: 'C position' },
+                  { low: 67, high: 74, from: 5, to: 9, color: 'rgba(62,207,142,.25)', label: 'G position' },
+                  { low: 72, high: 79, from: 10, to: 14, color: 'rgba(255,159,67,.25)', label: `high ${nm(72)} position` },
+                ],
+              })}
+              <p>Before each note, ask: <b>is it under my fingers?</b></p>
+              <ul>
+                <li><b>Yes</b> → stay where you are and press.</li>
+                <li><b>Higher than your pinky</b> → move up to the next position.</li>
+                <li><b>Lower than your thumb</b> → move down.</li>
+              </ul>
+              <p>Example: in G position your thumb is on ${nm(67)} and your pinky on ${nm(74)}. The ${nm(76)} in the 4th space is higher than ${nm(74)} → move up, thumb on treble ${nm(72)}.
+                The ${nm(64)} on the 1st line is lower than ${nm(67)} → move down, thumb on middle ${nm(60)}.</p>
+              <div class="tip">High ${nm(72)} position is the <b>same hand shape</b> as C position, just one octave (7 white keys) to the right.
+                In the practice, the <b style="color:#7c9cff">blue band</b> shows what your hand reaches; a <b style="color:#ffc857">yellow band</b> means move first — the numbers on the keyboard show where to.</div>`,
+          ],
           game: { type: 'staff', clef: 'treble', notes: whites('C4', 'G5'), count: 16, positions: [P.rC4, P.rG4, P.rC5] },
         },
         {
@@ -355,7 +379,8 @@
 
   GAMES.staff = function (body, cfg, progress, done) {
     const kb = PL.App.kb;
-    let i = 0, errors = 0, wrongThis = 0, target = null, lock = false, pos = null;
+    let i = 0, errors = 0, wrongThis = 0, target = null, lock = false, pos = null, shownAt = 0;
+    const skillKey = () => `read:${clefOf(target.note)}:${target.note}`;
     const t0 = performance.now();
     body.innerHTML = `<div class="prompt">Which key is this note? Press it.</div><div class="handline"></div><div class="st"></div><div class="feedback"></div>`;
     const st = body.querySelector('.st'), fb = body.querySelector('.feedback'), hl = body.querySelector('.handline');
@@ -370,13 +395,27 @@
       const c = same.length ? same : fits;
       return c.includes(pos) ? pos : c[0] || null;
     }
+    // The staff shows the reach of a hand position as a band: blue = note is under your fingers,
+    // yellow = the note is outside where your hand was, so you must move.
+    let bandPos = null, bandMoved = false;
     function showHand() {
       const np = choosePos(target);
-      if (!np) { pos = null; kb.clearFingers(); hl.innerHTML = clefOf(target.note) === 'treble' ? '✋ <b>Right hand</b>' : '🤚 <b>Left hand</b>'; return; }
-      const moved = pos && np !== pos;
+      if (!np) { pos = null; bandPos = null; kb.clearFingers(); hl.innerHTML = clefOf(target.note) === 'treble' ? '✋ <b>Right hand</b>' : '🤚 <b>Left hand</b>'; return; }
+      const prev = pos;
       pos = np;
+      bandMoved = !!prev && np !== prev;
+      bandPos = bandMoved ? prev : pos;
       kb.setFingers(new Map(pos.notes.map((n) => [n, fingerIn(pos, n)])), pos.hand);
-      hl.innerHTML = `${moved ? '<span class="move">🔄 Move your hand!</span> ' : ''}${posName(pos)}`;
+      if (!bandMoved) { hl.innerHTML = posName(pos); return; }
+      let why;
+      if (prev.hand !== pos.hand) {
+        why = `This note is on the ${pos.hand === 'R' ? 'treble (top) staff → use your <b>right hand</b>' : 'bass (bottom) staff → use your <b>left hand</b>'}.`;
+      } else {
+        const up = whiteOf(target) > prev.notes[4];
+        const edge = up ? prev.notes[4] : prev.notes[0];
+        why = `This note is <b>${up ? 'higher' : 'lower'}</b> than ${nm(edge)} under your ${fingerIn(prev, edge) === 1 ? 'thumb' : 'pinky'} — outside the yellow band. Move ${up ? 'up →' : '← down'}:`;
+      }
+      hl.innerHTML = `<span class="move">🔄 Move your hand!</span> ${why}<br>${posName(pos)}`;
     }
     const fingerTxt = () => {
       const f = pos && fingerIn(pos, whiteOf(target));
@@ -407,17 +446,25 @@
       const notes = [note];
       if (mode) { note.label = nm(target.note, { preferFlat: target.flat }); note.color = T.noteColor(target.note); }
       if (mode === 'landmark') { const lm = landmark(target).ln; if (lm !== whiteOf(target)) notes.unshift({ note: lm, color: '#d4d4d4', label: nm(lm) }); }
-      st.innerHTML = staff({ clef: cfg.clef, space: 16, width: notes.length > 1 ? 340 : 300, gapX: 90, notes });
+      const bands = bandPos ? [{
+        low: bandPos.notes[0], high: bandPos.notes[4],
+        clef: cfg.clef === 'grand' ? (bandPos.hand === 'R' ? 'treble' : 'bass') : undefined,
+        color: bandMoved ? 'rgba(255,200,87,.45)' : 'rgba(124,156,255,.22)',
+      }] : [];
+      st.innerHTML = staff({ clef: cfg.clef, space: 16, width: notes.length > 1 ? 340 : 300, gapX: 90, notes, bands });
     }
     function next() {
       let n = pick(cfg.notes, target && target.note);
       target = { note: n, flat: cfg.spellBoth && T.isBlack(n) && Math.random() < 0.5 };
       wrongThis = 0; lock = false; kb.clearHints(); showHand(); draw(false);
+      shownAt = performance.now();
       fb.textContent = ''; fb.className = 'feedback';
     }
     const off = PL.Input.on((ev) => {
       if (ev.type !== 'on' || lock) return;
       if (ev.note === target.note) {
+        if (!wrongThis) PL.Coach.record(skillKey(), true, { ms: performance.now() - shownAt });
+        if (pos) { bandPos = pos; bandMoved = false; } // the note now sits inside your hand's band
         kb.flash(ev.note, 'good'); i++; progress(i / cfg.count); draw('reveal'); lock = true;
         fb.innerHTML = `✓ Yes — that is <b>${nm(ev.note, { preferFlat: target.flat })}</b>${fingerTxt()}`; fb.className = 'feedback good';
         if (i >= cfg.count) {
@@ -427,6 +474,7 @@
         return;
       }
       wrongThis++; kb.flash(ev.note, 'bad');
+      if (wrongThis === 1) PL.Coach.record(skillKey(), false, { confused: ev.note });
       const dir = ev.note < target.note ? 'higher → to the right' : 'lower ← to the left';
       if (T.pc(ev.note) === T.pc(target.note)) {
         errors += 0.5;
@@ -601,6 +649,12 @@
   L.mount = function (main, id) {
     const les = L.byId[id];
     if (!les) { PL.App.go('learn'); return null; }
+    return L.run(main, les);
+  };
+  // Runs a catalogue lesson or a generated practice session (les.review set).
+  L.run = function (main, les) {
+    if (!les) { PL.App.go('home'); return null; }
+    const id = les.id;
     const kb = PL.App.kb;
     kb.setRange(les.range[0], les.range[1]);
     main.innerHTML = `<div class="lesson">
@@ -628,10 +682,11 @@
       if (cleanupGame) { cleanupGame(); cleanupGame = null; }
       kb.clearHints();
       const stars = score >= 0.9 ? 3 : score >= 0.75 ? 2 : score >= 0.5 ? 1 : 0;
-      PL.App.setStars('lesson:' + id, stars);
+      if (!les.review) PL.App.setStars('lesson:' + id, stars);
+      PL.Coach.lessonDone(les, score);
       PL.Audio.chime(stars > 0);
       const idx = L.all.indexOf(les);
-      const next = L.all[idx + 1];
+      const next = les.review ? null : L.all[idx + 1];
       const msg = ['Keep trying — every mistake teaches your fingers something.', 'You passed! Practise again for more stars.', 'Very good!', 'Perfect! 🏆'][stars];
       body.innerHTML = `<div class="card" style="max-width:460px;margin:20px auto">
         <div class="stars" style="font-size:44px">${'★'.repeat(stars)}<span class="off">${'★'.repeat(3 - stars)}</span></div>
@@ -639,7 +694,8 @@
         <p>${msg}</p><p class="muted small">${detail || ''}</p>
         <div class="row" style="justify-content:center">
           <button class="btn" data-retry>⟲ Again</button>
-          ${next ? `<button class="btn primary" data-nextlesson="${next.id}">Next: ${next.title} →</button>` : `<button class="btn primary" data-songs>🎼 Play songs →</button>`}
+          <button class="btn ${next ? '' : 'primary'}" data-home>📋 Today's plan</button>
+          ${next ? `<button class="btn primary" data-nextlesson="${next.id}">Next: ${next.title} →</button>` : ''}
         </div></div>`;
       progress(1);
     }
@@ -647,12 +703,12 @@
       const t = e.target.closest('button');
       if (!t) return;
       PL.Audio.init();
-      if (t.hasAttribute('data-back')) PL.App.go('learn');
+      if (t.hasAttribute('data-back')) PL.App.go(les.review ? 'home' : 'learn');
       else if (t.hasAttribute('data-next')) { p++; intro(); }
       else if (t.hasAttribute('data-prev')) { p--; intro(); }
       else if (t.hasAttribute('data-retry')) start();
       else if (t.dataset.nextlesson) PL.App.go('learn', t.dataset.nextlesson);
-      else if (t.hasAttribute('data-songs')) PL.App.go('songs');
+      else if (t.hasAttribute('data-home')) PL.App.go('home');
     });
     intro();
     return () => { if (cleanupGame) cleanupGame(); kb.clearHints(); };
