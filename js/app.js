@@ -215,7 +215,7 @@
     const nav = e.target.closest('#nav button');
     if (nav) return App.go(nav.dataset.view);
     const g = e.target.closest('[data-go]');
-    if (g && !e.target.closest('[data-del]')) { PL.Audio.init(); const [v, a] = g.dataset.go.split('/'); App.go(v, a); }
+    if (g && g.dataset.go && !e.target.closest('[data-del]')) { PL.Audio.init(); const [v, a] = g.dataset.go.split('/'); App.go(v, a); }
   });
 
   // ---------- cards ----------

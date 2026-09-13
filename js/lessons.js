@@ -578,9 +578,9 @@
     let round = 0, scoreSum = 0, raf = 0, timers = [], presses = [], listening = false, retried = false;
     body.innerHTML = `<div class="prompt phase"></div><div class="row glyphs" style="justify-content:center;gap:18px;min-height:110px;margin:16px 0"></div>
       <div class="prompt count" style="font-size:36px;font-weight:800;min-height:50px"></div><div class="feedback"></div>
-      <div class="row" style="justify-content:center"><button class="btn" data-again hidden>👂 Listen again</button><button class="btn primary big" data-go>▶ Start</button></div>`;
+      <div class="row" style="justify-content:center"><button class="btn" data-again hidden>👂 Listen again</button><button class="btn primary big" data-rhythm-start>▶ Start</button></div>`;
     const phase = body.querySelector('.phase'), glyphs = body.querySelector('.glyphs'), countEl = body.querySelector('.count'), fb = body.querySelector('.feedback');
-    const goBtn = body.querySelector('[data-go]'), againBtn = body.querySelector('[data-again]');
+    const goBtn = body.querySelector('[data-rhythm-start]'), againBtn = body.querySelector('[data-again]');
     const off = PL.Input.on((ev) => { if (ev.type === 'on' && listening) presses.push(ev.time); });
 
     function layout(pat) {
