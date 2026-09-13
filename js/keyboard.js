@@ -145,7 +145,7 @@
       this._releasePointer();
       this.pointerNote = n;
       PL.Audio.init();
-      PL.Input.emit('on', n, 0.7);
+      PL.Input.emit('on', n, 0.7, e.timeStamp);
     }
     _releasePointer() {
       if (this.pointerNote != null) { PL.Input.emit('off', this.pointerNote); this.pointerNote = null; }

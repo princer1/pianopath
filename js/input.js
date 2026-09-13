@@ -8,7 +8,8 @@
 
   I.on = (fn) => { subs.add(fn); return () => subs.delete(fn); };
 
-  I.emit = function (type, note, vel = 0.8) {
+  // time: when the key actually went down (event timestamp, performance.now() clock), if known
+  I.emit = function (type, note, vel = 0.8, time) {
     if (type === 'on') {
       if (I.sound) PL.Audio.noteOn(note, vel);
       I.down.add(note);
@@ -17,7 +18,8 @@
       PL.Audio.noteOff(note);
       I.down.delete(note);
     }
-    const ev = { type, note, vel, time: performance.now() };
+    const now = performance.now();
+    const ev = { type, note, vel, time: time && time <= now && now - time < 2000 ? time : now };
     subs.forEach((fn) => fn(ev));
   };
 
@@ -49,8 +51,8 @@
   function handleMIDI(e) {
     const [status, d1, d2] = e.data;
     const cmd = status & 0xf0;
-    if (cmd === 0x90 && d2 > 0) I.emit('on', d1, d2 / 127);
-    else if (cmd === 0x80 || (cmd === 0x90 && d2 === 0)) I.emit('off', d1);
+    if (cmd === 0x90 && d2 > 0) I.emit('on', d1, d2 / 127, e.timeStamp);
+    else if (cmd === 0x80 || (cmd === 0x90 && d2 === 0)) I.emit('off', d1, 0, e.timeStamp);
     else if (cmd === 0xb0 && d1 === 64) PL.Audio.sustain(d2 >= 64);
   }
 
@@ -71,7 +73,7 @@
     if (k in KEYMAP && !held.has(k)) {
       const note = I.octave + KEYMAP[k];
       held.set(k, note);
-      I.emit('on', note, 0.75);
+      I.emit('on', note, 0.75, e.timeStamp);
       e.preventDefault();
     }
   });

@@ -497,7 +497,7 @@
     let raf = 0, presses = [], running = false, t0 = 0, timer = 0;
     body.innerHTML = `<div class="prompt">Press <b>any key</b> on every beat · ${cfg.bpm} BPM</div>
       <div class="prompt count" style="font-size:40px;font-weight:800;min-height:60px"></div>
-      <div class="beats">${Array.from({ length: total }, (_, k) => `<div class="beat" data-k="${k}">${(k % 4) + 1}${cfg.fadeAfter && k >= cfg.fadeAfter * 4 ? '<small>no click</small>' : ''}</div>`).join('')}</div>
+      <div class="beats">${Array.from({ length: total }, (_, k) => `<div class="beat" data-k="${k}">${(k % 4) + 1}<span class="ms"></span>${cfg.fadeAfter && k >= cfg.fadeAfter * 4 ? '<small>no click</small>' : ''}</div>`).join('')}</div>
       <div class="timing-line"><div class="center"></div></div>
       <div class="timing-labels"><span>← too early</span><span>on time</span><span>too late →</span></div>
       <div class="feedback"></div>
@@ -505,14 +505,14 @@
     const countEl = body.querySelector('.count'), fb = body.querySelector('.feedback'), line = body.querySelector('.timing-line');
     const beatEls = [...body.querySelectorAll('.beat')];
     const off = PL.Input.on((ev) => {
-      if (ev.type === 'on' && running) { const ctx = PL.Audio.init(); presses.push(ctx.currentTime - (ctx.outputLatency || 0)); }
+      if (ev.type === 'on' && running) presses.push(ev.time); // when the key went down (performance.now clock)
     });
     body.querySelector('[data-start]').onclick = (e) => {
       e.target.hidden = true;
       const ctx = PL.Audio.init();
       presses = []; running = true;
       line.querySelectorAll('.mark').forEach((m) => m.remove());
-      beatEls.forEach((b) => (b.className = 'beat'));
+      beatEls.forEach((b) => { b.className = 'beat'; b.querySelector('.ms').textContent = ''; });
       t0 = ctx.currentTime + 0.4;
       for (let k = 0; k < 4 + total; k++) {
         const silent = cfg.fadeAfter && k - 4 >= cfg.fadeAfter * 4;
@@ -520,40 +520,53 @@
       }
       const tick = () => {
         raf = requestAnimationFrame(tick);
-        const beatF = (ctx.currentTime - t0) / spb;
+        const beatF = (performance.now() - PL.Audio.heardAt(t0)) / (spb * 1000); // follows the clicks as heard
         countEl.textContent = beatF >= 0 && beatF < 4 ? 4 - Math.floor(beatF) : beatF >= 4 ? '' : 'Ready…';
         const k = Math.floor(beatF - 4 + 0.5);
         beatEls.forEach((b, j) => b.classList.toggle('now', j === k));
         progress(Math.max(0, Math.min(1, (beatF - 4) / total)));
       };
       tick();
-      timer = setTimeout(evaluate, (0.4 + (4 + total + 0.6) * spb) * 1000);
+      timer = setTimeout(evaluate, (0.4 + (4 + total + 0.6) * spb) * 1000 + PL.Audio.outputDelay());
     };
     function evaluate() {
       running = false; cancelAnimationFrame(raf);
+      const W = PL.Audio.windows();
       let pts = 0; const offs = [];
       const used = new Set();
       for (let k = 0; k < total; k++) {
         const tb = t0 + (4 + k) * spb;
-        let best = -1;
-        presses.forEach((p, j) => { if (!used.has(j) && Math.abs(p - tb) < spb / 2 && (best < 0 || Math.abs(p - tb) < Math.abs(presses[best] - tb))) best = j; });
+        let best = -1, bestD = 0;
+        presses.forEach((p, j) => {
+          const dd = PL.Audio.offsetMs(p, tb); // ms, + = late, setup delay already removed
+          if (!used.has(j) && Math.abs(dd) < spb * 500 && (best < 0 || Math.abs(dd) < Math.abs(bestD))) { best = j; bestD = dd; }
+        });
         const el = beatEls[k];
         el.classList.remove('now');
-        if (best < 0) { el.classList.add('hit-bad'); continue; }
+        if (best < 0) { el.classList.add('hit-bad'); el.querySelector('.ms').textContent = '—'; continue; }
         used.add(best);
-        const d = presses[best] - tb; offs.push(d);
-        const a = Math.abs(d);
-        if (a < 0.07) { pts += 1; el.classList.add('hit-good'); } else if (a < 0.14) { pts += 0.6; el.classList.add('hit-ok'); } else { pts += 0.2; el.classList.add('hit-bad'); }
+        offs.push(bestD);
+        const a = Math.abs(bestD);
+        if (a <= W.good) { pts += 1; el.classList.add('hit-good'); } else if (a <= W.ok) { pts += 0.6; el.classList.add('hit-ok'); } else { pts += 0.2; el.classList.add('hit-bad'); }
+        el.querySelector('.ms').textContent = `${bestD >= 0 ? '+' : '−'}${Math.abs(Math.round(bestD))}`;
         const m = document.createElement('div');
-        m.className = 'mark'; m.style.left = Math.max(1, Math.min(99, 50 + (d / 0.25) * 50)) + '%';
+        m.className = 'mark'; m.style.left = Math.max(1, Math.min(99, 50 + (bestD / (W.ok * 1.4)) * 50)) + '%';
         line.appendChild(m);
       }
       const extra = Math.max(0, presses.length - used.size);
       const score = Math.max(0, (pts - extra * 0.25) / total);
       const avg = offs.length ? offs.reduce((s, x) => s + x, 0) / offs.length : 0;
-      const tendency = !offs.length ? 'No presses heard — is your keyboard connected?' : avg > 0.04 ? 'You are a little <b>late</b> on average — press together with the click.' : avg < -0.04 ? 'You are <b>rushing</b> a little — wait for the click.' : 'Your timing is right in the middle. 👏';
+      const spread = offs.length ? Math.sqrt(offs.reduce((s, x) => s + (x - avg) ** 2, 0) / offs.length) : 0;
+      const lim = W.good * 0.5;
+      let tendency = !offs.length ? 'No presses heard — is your keyboard connected?'
+        : avg > lim ? `You are a little <b>late</b> on average (${Math.round(avg)} ms) — press together with the click.`
+        : avg < -lim ? `You are <b>rushing</b> a little (${Math.round(-avg)} ms early) — wait for the click.`
+        : 'Your timing is right in the middle. 👏';
+      if (offs.length >= 8 && Math.abs(avg) > 50 && spread < 45) {
+        tendency += `<br>It's almost the same every click (±${Math.round(spread)} ms) — that can be a delay in your setup. <a href="#timing">🎯 Run the timing check</a>.`;
+      }
       fb.innerHTML = tendency; fb.className = 'feedback';
-      setTimeout(() => done(score, `${Math.round(avg * 1000)} ms average ${avg >= 0 ? 'late' : 'early'} · ${extra} extra press${extra === 1 ? '' : 'es'}<br>${tendency}`), 1800);
+      setTimeout(() => done(score, `${Math.round(Math.abs(avg))} ms average ${avg >= 0 ? 'late' : 'early'} · varies ±${Math.round(spread)} ms · ${extra} extra press${extra === 1 ? '' : 'es'}<br>${tendency}`), 3500);
     }
     return () => { off(); cancelAnimationFrame(raf); clearTimeout(timer); running = false; kb.clearHints(); };
   };
@@ -568,7 +581,7 @@
       <div class="row" style="justify-content:center"><button class="btn" data-again hidden>👂 Listen again</button><button class="btn primary big" data-go>▶ Start</button></div>`;
     const phase = body.querySelector('.phase'), glyphs = body.querySelector('.glyphs'), countEl = body.querySelector('.count'), fb = body.querySelector('.feedback');
     const goBtn = body.querySelector('[data-go]'), againBtn = body.querySelector('[data-again]');
-    const off = PL.Input.on((ev) => { if (ev.type === 'on' && listening) { const c = PL.Audio.init(); presses.push(c.currentTime - (c.outputLatency || 0)); } });
+    const off = PL.Input.on((ev) => { if (ev.type === 'on' && listening) presses.push(ev.time); });
 
     function layout(pat) {
       let b = 0;
@@ -591,12 +604,12 @@
       const els = [...glyphs.children];
       const tick = () => {
         raf = requestAnimationFrame(tick);
-        const bf = (ctx.currentTime - t0) / spb;
+        const bf = (performance.now() - PL.Audio.heardAt(t0)) / (spb * 1000);
         countEl.textContent = bf >= 0 && bf < 4 ? 4 - Math.floor(bf) : '';
         items.forEach((it, j) => { els[j].style.background = bf - 4 >= it.beat && bf - 4 < it.beat + it.len ? 'rgba(124,156,255,.3)' : ''; });
       };
       tick();
-      return new Promise((res) => timers.push(setTimeout(() => { cancelAnimationFrame(raf); res({ t0, items }); }, (0.3 + 8.4 * spb) * 1000)));
+      return new Promise((res) => timers.push(setTimeout(() => { cancelAnimationFrame(raf); res({ t0, items }); }, (0.3 + 8.4 * spb) * 1000 + PL.Audio.outputDelay())));
     }
     function judge({ t0, items }) {
       listening = false;
@@ -604,16 +617,21 @@
       const used = new Set();
       let pts = 0;
       const els = [...glyphs.children];
+      const W = PL.Audio.windows();
+      const reach = Math.min(spb * 1000 * 0.45, Math.max(W.ok * 1.4, 220)); // ms a press may be away from its note
       expect.forEach((it) => {
         const tb = t0 + (4 + it.beat) * spb;
-        let best = -1;
-        presses.forEach((p, j) => { if (!used.has(j) && Math.abs(p - tb) < Math.min(0.25, spb * 0.3) && (best < 0 || Math.abs(p - tb) < Math.abs(presses[best] - tb))) best = j; });
+        let best = -1, bestD = 0;
+        presses.forEach((p, j) => {
+          const dd = PL.Audio.offsetMs(p, tb);
+          if (!used.has(j) && Math.abs(dd) < reach && (best < 0 || Math.abs(dd) < Math.abs(bestD))) { best = j; bestD = dd; }
+        });
         const el = els[items.indexOf(it)];
         if (best < 0) { el.style.background = 'rgba(255,93,108,.35)'; return; }
         used.add(best);
-        const a = Math.abs(presses[best] - tb);
-        pts += a < 0.08 ? 1 : a < 0.16 ? 0.7 : 0.4;
-        el.style.background = a < 0.08 ? 'rgba(62,207,142,.35)' : 'rgba(255,200,87,.35)';
+        const a = Math.abs(bestD);
+        pts += a <= W.good ? 1 : a <= W.ok ? 0.7 : 0.4;
+        el.style.background = a <= W.good ? 'rgba(62,207,142,.35)' : 'rgba(255,200,87,.35)';
       });
       const extra = presses.length - used.size;
       return Math.max(0, (pts - extra * 0.3) / expect.length);

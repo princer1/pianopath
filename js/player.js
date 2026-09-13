@@ -218,6 +218,8 @@
     const handChosen = (n) => S.hands === 'both' || (S.hands === 'right' ? n.hand === 'R' : n.hand === 'L');
     const isActive = (n) => S.mode !== 'listen' && n.note >= RL && n.note <= RH && handChosen(n);
     const bps = () => (bpmAt(Math.max(0, S.pos)) * S.tempo) / 60;
+    // How far from a note (in beats) a press still counts, from the timing strictness setting.
+    const hitWindow = () => Math.min(0.5, (Math.max(220, PL.Audio.windows().ok * 1.5) / 1000) * bps());
     const addWrong = () => {
       S.wrong++;
       const b = Math.max(0, Math.floor(S.pos / barLen));
@@ -273,14 +275,18 @@
         const recent = notes.some((n) => n.hit && n.note === ev.note && Math.abs(n.start - S.pos) < 0.3);
         if (!recent) { addWrong(); kb.flash(ev.note, 'bad'); }
       } else {
-        const win = Math.min(0.5, 0.22 * bps());
+        // Where the music was when the key went down, as heard through the speakers: the handling delay,
+        // the sound output delay and the player's own correction don't count against them.
+        const lagMs = performance.now() - ev.time + PL.Audio.outputDelay() + PL.Audio.timing.offset;
+        const at = S.pos - (lagMs / 1000) * bps();
+        const win = hitWindow();
         let best = null;
         for (const n of notes) {
-          if (n.start > S.pos + win) break;
+          if (n.start > at + win) break;
           if (n.skip || n.hit || n.miss || n.note !== ev.note || !isActive(n)) continue;
-          if (Math.abs(n.start - S.pos) <= win && (!best || Math.abs(n.start - S.pos) < Math.abs(best.start - S.pos))) best = n;
+          if (Math.abs(n.start - at) <= win && (!best || Math.abs(n.start - at) < Math.abs(best.start - at))) best = n;
         }
-        if (best) { best.hit = true; best.delta = (S.pos - best.start) / bps(); kb.flash(ev.note, 'good'); }
+        if (best) { best.hit = true; best.delta = (at - best.start) / bps(); kb.flash(ev.note, 'good'); }
         else { addWrong(); kb.flash(ev.note, 'bad'); }
       }
     });
@@ -314,8 +320,8 @@
           if (S.metro || b < 0) PL.Audio.click(Math.abs((((b % barLen) + barLen) % barLen)) < 1e-6);
         }
       }
-      // autoplay (listen mode / the other hand) and misses (play mode)
-      const win = Math.min(0.5, 0.22 * bps());
+      // autoplay (listen mode / the other hand) and misses (play mode); wait for delayed presses before calling a miss
+      const win = hitWindow() + ((PL.Audio.outputDelay() + Math.max(0, PL.Audio.timing.offset) + 40) / 1000) * bps();
       for (const n of notes) {
         if (n.start > next) break;
         if (n.skip) continue;
@@ -369,8 +375,9 @@
       const avg = timed.length ? timed.reduce((s, n) => s + n.delta, 0) / timed.length : 0;
       let tip = '';
       if (S.mode === 'play' && timed.length > 3) {
-        if (avg > 0.06) tip = 'You tend to play a little <b>late</b>. Listen to the click and press <i>with</i> it.';
-        else if (avg < -0.06) tip = 'You tend to rush — a little <b>early</b>. Relax and wait for the click.';
+        const lim = (PL.Audio.windows().good * 0.7) / 1000;
+        if (avg > lim) tip = `You tend to play a little <b>late</b> (${Math.round(avg * 1000)} ms). Listen to the click and press <i>with</i> it — or run the <a href="#timing">🎯 timing check</a> if it's always the same.`;
+        else if (avg < -lim) tip = `You tend to rush — a little <b>early</b> (${Math.round(-avg * 1000)} ms). Relax and wait for the click.`;
         else tip = 'Your timing is steady. 👏';
       }
       if (S.mode === 'wait' && pct >= 85) tip = 'Great! Now try <b>🎯 Play in tempo</b> at this speed.';

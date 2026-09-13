@@ -9,7 +9,7 @@
   let data = null;
   try { data = JSON.parse(localStorage.getItem(KEY)); } catch (e) {}
   data = Object.assign({ stars: {}, days: {} }, data || {});
-  data.settings = Object.assign({ naming: null, colors: true, labels: 'all', sound: true, volume: 0.8, low: 24, high: 107, instrument: 'synth' }, data.settings || {});
+  data.settings = Object.assign({ naming: null, colors: true, labels: 'all', sound: true, volume: 0.8, low: 24, high: 107, instrument: 'synth', timingOffset: 0, strictness: 'relaxed' }, data.settings || {});
   const KB_SIZES = [['49', 36, 84, '49 keys (C2–C6)'], ['61', 36, 96, '61 keys (C2–C7)'], ['76', 28, 103, '76 keys (E1–G7)'], ['84', 24, 107, '84 keys (C1–B7)'], ['88', 21, 108, '88 keys (A0–C8)']];
   const save = () => { try { localStorage.setItem(KEY, JSON.stringify(data)); } catch (e) {} };
 
@@ -20,6 +20,8 @@
     PL.Input.sound = data.settings.sound;
     PL.Audio.setVolume(data.settings.volume);
     PL.Audio.useSamples = data.settings.instrument === 'recorded';
+    PL.Audio.timing.offset = data.settings.timingOffset || 0;
+    PL.Audio.timing.level = data.settings.strictness || 'relaxed';
     App.kb.setLabels(data.settings.labels);
     PL.Lessons.refresh();
   }
@@ -32,6 +34,12 @@
   App.getDays = () => data.days;
   App.getInstrument = () => data.settings.instrument;
   App.setInstrument = (v) => { data.settings.instrument = v; PL.Audio.useSamples = v === 'recorded'; save(); };
+  // { offset: ms correction } and/or { level: 'relaxed' | 'normal' | 'strict' }
+  App.setTiming = (o) => {
+    if ('offset' in o) data.settings.timingOffset = PL.Audio.timing.offset = o.offset;
+    if ('level' in o) data.settings.strictness = PL.Audio.timing.level = o.level;
+    save();
+  };
 
   // Imported MIDI files are stored as the parsed file plus the chosen parts, and arranged when the app starts.
   App.imported = [];
@@ -198,6 +206,7 @@
     else if (view === 'settings') renderSettings();
     else if (view === 'progress') PL.Coach.renderProgress(main);
     else if (view === 'sound') cleanup = PL.Recorder.mount(main);
+    else if (view === 'timing') cleanup = PL.Timing.mount(main);
     else if (view === 'review') cleanup = PL.Lessons.run(main, PL.Coach.reviewLesson(arg));
     else PL.Coach.renderHome(main);
   }
@@ -375,6 +384,13 @@
         <p class="muted small">Today's plan on the home page is sized to this goal. Changing it rebuilds today's plan.</p>
       </div>
       <div class="card stack">
+        <h3 style="margin:0">🎯 Timing</h3>
+        <label class="field">How strict is "on time"?
+          <select data-strict>${opt('relaxed', 'Relaxed — within 90 ms counts as on time (best for learning)', s.strictness)}${opt('normal', 'Normal — within 60 ms', s.strictness)}${opt('strict', 'Strict — within 35 ms', s.strictness)}</select></label>
+        <div class="row"><button class="btn" data-go="timing">🎯 Check my delay (latency)</button>
+          <span class="muted small">Correction in use: ${s.timingOffset > 0 ? '+' : ''}${s.timingOffset} ms. Run the check if lessons always say you're late (or early) by about the same amount.</span></div>
+      </div>
+      <div class="card stack">
         <h3 style="margin:0">🎹 Your keyboard</h3>
         <label class="field">Size
           <select data-kbsize>${KB_SIZES.map(([k, , , label]) => `<option value="${k}" ${preset && preset[0] === k ? 'selected' : ''}>${label}</option>`).join('')}
@@ -395,6 +411,7 @@
     main.querySelector('[data-reconnect]').onclick = () => PL.Input.initMIDI(midiStatus).then(route);
     main.querySelector('[data-goal]').onchange = (e) => PL.Coach.setGoal(+e.target.value);
     main.querySelector('[data-instrument]').onchange = (e) => App.setInstrument(e.target.value);
+    main.querySelector('[data-strict]').onchange = (e) => App.setTiming({ level: e.target.value });
     main.querySelector('[data-kbsize]').onchange = (e) => {
       const z = KB_SIZES.find(([k]) => k === e.target.value);
       if (!z) return;

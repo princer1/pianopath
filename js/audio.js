@@ -22,6 +22,23 @@
   };
   A.now = () => (ctx ? ctx.currentTime : 0);
   A.setVolume = (v) => { volume = v; if (master) master.gain.value = v; };
+
+  // ---------- timing ----------
+  // offset: the player's measured delay correction in ms (from the timing check). level: how strict "on time" is.
+  A.timing = { offset: 0, level: 'relaxed' };
+  const WINDOWS = { relaxed: { good: 90, ok: 180 }, normal: { good: 60, ok: 120 }, strict: { good: 35, ok: 70 } };
+  A.windows = () => WINDOWS[A.timing.level] || WINDOWS.relaxed;
+  // performance.now() time at which a sound scheduled for AudioContext time t reaches the speakers.
+  A.heardAt = function (t) {
+    if (!ctx) return performance.now();
+    const ts = ctx.getOutputTimestamp && ctx.getOutputTimestamp();
+    if (ts && ts.performanceTime > 0 && ts.contextTime > 0) return ts.performanceTime + (t - ts.contextTime) * 1000;
+    return performance.now() + (t - ctx.currentTime + (ctx.baseLatency || 0) + (ctx.outputLatency || 0)) * 1000;
+  };
+  // How long a sound started now takes to be heard, in ms.
+  A.outputDelay = () => (ctx ? Math.max(0, A.heardAt(ctx.currentTime) - performance.now()) : 0);
+  // Timing error in ms (+ = late) of a key press at performance time `pressTime` against a sound scheduled at context time t.
+  A.offsetMs = (pressTime, t) => pressTime - A.heardAt(t) - A.timing.offset;
   A.getVolume = () => volume;
 
   const freq = (n) => 440 * Math.pow(2, (n - 69) / 12);

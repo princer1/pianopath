@@ -121,6 +121,8 @@ label.field { display: flex; flex-direction: column; gap: 4px; font-size: 13px; 
 .beat.hit-ok { background: #4d4020; border-color: var(--warn); }
 .beat.hit-bad { background: #4d1f25; border-color: var(--bad); }
 .beat small { position: absolute; bottom: -20px; font-size: 11px; color: var(--muted); font-weight: 400; white-space: nowrap; }
+.beat .ms { position: absolute; top: -19px; left: 50%; transform: translateX(-50%); font-size: 11px; color: var(--muted); font-weight: 600; white-space: nowrap; }
+.beats:has(.ms) { margin-top: 30px; row-gap: 32px; }
 .timing-line { position: relative; height: 40px; max-width: 500px; margin: 30px auto 10px; border-radius: 8px;
   background: linear-gradient(90deg, #4d1f25, #4d4020 30%, #1d4d3a 42%, #1d4d3a 58%, #4d4020 70%, #4d1f25); }
 .timing-line .center { position: absolute; left: 50%; top: -6px; bottom: -6px; width: 2px; background: #fff; }
