@@ -166,8 +166,10 @@
               <div style="text-align:center">${posKeys(P.rG4)}<div class="small">Above the ${nm(67)} line (${nm(69)} ${nm(71)} ${nm(72)} ${nm(74)})<br>→ <b>G position</b>, thumb on ${nm(67)}</div></div>
             </div>
             <p>Above every note the app shows which position to use, and says <b>🔄 Move your hand!</b> when you need to switch. ${nm(67)} is in both positions, so for ${nm(67)} you can stay where you are.</p>
-            <div class="tip">The rule for every position: <b>is the note under your 5 fingers?</b> Stay. <b>Higher than your pinky?</b> Move up. <b>Lower than your thumb?</b> Move down.
-              On the staff, a <b style="color:#7c9cff">blue band</b> shows the notes your hand reaches. A <b style="color:#ffc857">yellow band</b> means the note is outside it — move first, then press.</div>`],
+            <div class="tip">The rule for every position: <b>is the note under your 5 fingers?</b> Stay.
+              <b>Just one key past your pinky or thumb?</b> Stretch that finger — your hand stays where it is.
+              <b>Further away?</b> Move your hand up or down.
+              On the staff, a <b style="color:#7c9cff">blue band</b> shows the notes under your fingers, a <b style="color:#3ecf8e">green mark</b> means stretch, and a <b style="color:#ffc857">yellow band</b> means the note is too far — move first, then press.</div>`],
           game: { type: 'staff', clef: 'treble', notes: whites('C4', 'C5'), count: 14, positions: [P.rC4, P.rG4] },
         },
         {
@@ -201,11 +203,12 @@
               <p>Before each note, ask: <b>is it under my fingers?</b></p>
               <ul>
                 <li><b>Yes</b> → stay where you are and press.</li>
-                <li><b>Higher than your pinky</b> → move up to the next position.</li>
-                <li><b>Lower than your thumb</b> → move down.</li>
+                <li><b>Just one key past your pinky or thumb</b> → <b>stretch</b> that finger. Your hand stays put — pianists do this all the time.</li>
+                <li><b>Further than that</b> → move your hand to the next position up or down.</li>
               </ul>
-              <p>Example: in G position your thumb is on ${nm(67)} and your pinky on ${nm(74)}. The ${nm(76)} in the 4th space is higher than ${nm(74)} → move up, thumb on treble ${nm(72)}.
-                The ${nm(64)} on the 1st line is lower than ${nm(67)} → move down, thumb on middle ${nm(60)}.</p>
+              <p>Example: in G position your thumb is on ${nm(67)} and your pinky on ${nm(74)}.
+                The ${nm(76)} is just one key above ${nm(74)} → stretch your pinky. The ${nm(77)} on the top line is two keys away → move up, thumb on treble ${nm(72)}.
+                The ${nm(65)} is one key below your thumb → stretch your thumb down. The ${nm(64)} is two keys below → move down, thumb on middle ${nm(60)}.</p>
               <div class="tip">High ${nm(72)} position is the <b>same hand shape</b> as C position, just one octave (7 white keys) to the right.
                 In the practice, the <b style="color:#7c9cff">blue band</b> shows what your hand reaches; a <b style="color:#ffc857">yellow band</b> means move first — the numbers on the keyboard show where to.</div>`,
           ],
@@ -387,39 +390,57 @@
     const clefOf = (n) => (cfg.clef === 'grand' ? (n >= 60 ? 'treble' : 'bass') : cfg.clef);
     const whiteOf = (t) => t.note - T.spell(t.note, t.flat).acc; // F♯ -> F, G♭ -> G
 
-    // Pick the hand position for a note: the matching hand for its staff, staying put when possible.
+    // One white key past the pinky or thumb is reached by stretching that finger, without moving the hand.
+    const stepWhite = (n, dir) => { let m = n + dir; while (T.isBlack(m)) m += dir; return m; };
+    const stretchDir = (p, w) => (w === stepWhite(p.notes[4], 1) ? 'up' : w === stepWhite(p.notes[0], -1) ? 'down' : null);
+    const edgeFinger = (p, dir) => fingerIn(p, dir === 'up' ? p.notes[4] : p.notes[0]);
+    const fingerWord = (f) => (f === 1 ? 'thumb' : 'pinky');
+
+    // Pick the hand position for a note: stay put if it's under the fingers or one stretch away;
+    // otherwise use a position of the hand that matches its staff.
     function choosePos(t) {
-      const fits = (cfg.positions || []).filter((p) => p.notes.includes(whiteOf(t)));
+      const w = whiteOf(t);
+      if (pos && pos.notes.includes(w)) return { pos, stretch: null };
+      if (pos && stretchDir(pos, w)) return { pos, stretch: stretchDir(pos, w) };
+      const fits = (cfg.positions || []).filter((p) => p.notes.includes(w));
       const hand = clefOf(t.note) === 'treble' ? 'R' : 'L';
       const same = fits.filter((p) => p.hand === hand);
-      const c = same.length ? same : fits;
-      return c.includes(pos) ? pos : c[0] || null;
+      const p = (same.length ? same : fits)[0];
+      return p ? { pos: p, stretch: null } : null;
     }
-    // The staff shows the reach of a hand position as a band: blue = note is under your fingers,
-    // yellow = the note is outside where your hand was, so you must move.
-    let bandPos = null, bandMoved = false;
+    // The staff shows the reach of a hand position as a band: blue = under your fingers,
+    // green = one stretch away, yellow = outside where your hand was, so you must move.
+    let bandPos = null, bandMoved = false, stretch = null;
     function showHand() {
-      const np = choosePos(target);
-      if (!np) { pos = null; bandPos = null; kb.clearFingers(); hl.innerHTML = clefOf(target.note) === 'treble' ? '<span class="hb r">R</span> <b>Right hand</b>' : '<span class="hb l">L</span> <b>Left hand</b>'; return; }
+      const choice = choosePos(target);
+      if (!choice) { pos = null; bandPos = null; stretch = null; kb.clearFingers(); hl.innerHTML = clefOf(target.note) === 'treble' ? '<span class="hb r">R</span> <b>Right hand</b>' : '<span class="hb l">L</span> <b>Left hand</b>'; return; }
       const prev = pos;
-      pos = np;
-      bandMoved = !!prev && np !== prev;
+      pos = choice.pos;
+      stretch = choice.stretch;
+      bandMoved = !!prev && pos !== prev;
       bandPos = bandMoved ? prev : pos;
-      kb.setFingers(new Map(pos.notes.map((n) => [n, fingerIn(pos, n)])), pos.hand);
+      const map = new Map(pos.notes.map((n) => [n, fingerIn(pos, n)]));
+      if (stretch) map.set(whiteOf(target), { n: edgeFinger(pos, stretch), ext: true });
+      kb.setFingers(map, pos.hand);
+      if (stretch) {
+        const f = edgeFinger(pos, stretch);
+        hl.innerHTML = `<span class="stretch">🤏 Stretch, don't move!</span> This note is just <b>one key ${stretch === 'up' ? 'above' : 'below'}</b> your hand — reach it with your ${fingerWord(f)} (${f}) and keep your hand where it is.<br>${posName(pos)}`;
+        return;
+      }
       if (!bandMoved) { hl.innerHTML = posName(pos); return; }
       let why;
       if (prev.hand !== pos.hand) {
-        why = `This note is on the ${pos.hand === 'R' ? 'treble (top) staff → use your <b>right hand</b>' : 'bass (bottom) staff → use your <b>left hand</b>'}.`;
+        why = `This note is on the ${pos.hand === 'R' ? 'treble (top)' : 'bass (bottom)'} staff and too far for your ${prev.hand === 'R' ? 'right' : 'left'} hand to stretch → play it with your <b>${pos.hand === 'R' ? 'right' : 'left'} hand</b>.`;
       } else {
         const up = whiteOf(target) > prev.notes[4];
         const edge = up ? prev.notes[4] : prev.notes[0];
-        why = `This note is <b>${up ? 'higher' : 'lower'}</b> than ${nm(edge)} under your ${fingerIn(prev, edge) === 1 ? 'thumb' : 'pinky'} — outside the yellow band. Move ${up ? 'up →' : '← down'}:`;
+        why = `This note is <b>more than one key ${up ? 'above' : 'below'}</b> ${nm(edge)} under your ${fingerWord(fingerIn(prev, edge))} — too far to stretch. Move ${up ? 'up →' : '← down'}:`;
       }
       hl.innerHTML = `<span class="move">🔄 Move your hand!</span> ${why}<br>${posName(pos)}`;
     }
     const fingerTxt = () => {
-      const f = pos && fingerIn(pos, whiteOf(target));
-      return f ? ` — ${pos.hand === 'R' ? 'right' : 'left'} hand, <b>finger ${f}</b>${T.isBlack(target.note) ? ' (slide it onto the black key)' : ''}` : '';
+      const f = pos && (fingerIn(pos, whiteOf(target)) || (stretch ? edgeFinger(pos, stretch) : 0));
+      return f ? ` — ${pos.hand === 'R' ? 'right' : 'left'} hand, <b>finger ${f}</b>${stretch ? ' (stretched)' : ''}${T.isBlack(target.note) ? ' (slide it onto the black key)' : ''}` : '';
     };
 
     // How to count to the note from the nearest landmark on its staff.
@@ -451,6 +472,9 @@
         clef: cfg.clef === 'grand' ? (bandPos.hand === 'R' ? 'treble' : 'bass') : undefined,
         color: bandMoved ? 'rgba(255,200,87,.45)' : 'rgba(124,156,255,.22)',
       }] : [];
+      if (bandPos && stretch && !bandMoved) {
+        bands.push({ low: whiteOf(target), high: whiteOf(target), clef: bands[0].clef, color: 'rgba(62,207,142,.4)' });
+      }
       st.innerHTML = staff({ clef: cfg.clef, space: 16, width: notes.length > 1 ? 340 : 300, gapX: 90, notes, bands });
     }
     function next() {

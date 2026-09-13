@@ -121,13 +121,16 @@
       this.keys.forEach((k, n) => this._finger(k, n));
     }
     clearFingers() { if (this.fingers) this.setFingers(null); }
+    // Map values: a finger number, or { n: finger, ext: true } for a key reached by stretching that finger.
     _finger(k, n) {
       let b = k.querySelector('.finger');
-      const f = this.fingers && this.fingers.get(n);
+      const v = this.fingers && this.fingers.get(n);
+      const f = v && typeof v === 'object' ? v.n : v;
       if (!f) { if (b) b.remove(); return; }
       if (!b) { b = document.createElement('div'); b.className = 'finger'; k.appendChild(b); }
       b.textContent = f;
       b.classList.toggle('left', this.fingerHand === 'L');
+      b.classList.toggle('ext', !!(v && v.ext));
     }
     flash(n, cls, ms = 350) {
       const k = this.keys.get(n);
